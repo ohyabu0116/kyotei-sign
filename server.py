@@ -358,12 +358,15 @@ class Handler(BaseHTTPRequestHandler):
         return _json_response(self, 200, r)
 
 
-# ── 起動時の backup ブランチ復元 ────────────────────────────────
-BACKUP_URL = "https://raw.githubusercontent.com/ohyabu0116/kyotei-sign/backup/data.json"
+# ── 起動時の main ブランチ data.json 復元 ────────────────────────
+DATA_URL = "https://raw.githubusercontent.com/ohyabu0116/kyotei-sign/main/data.json"
 
 
-def _restore_from_backup():
-    """起動時、DBが空なら backup ブランチの data.json から復元する。"""
+def _restore_from_repo():
+    """
+    起動時、DBが空ならリポジトリ直下の data.json から復元する。
+    keirin-sign と同じパターン: 手動で export_data.py を回して push したJSONを取り込む。
+    """
     try:
         with db.get_conn() as conn:
             row = conn.execute("SELECT COUNT(*) FROM races").fetchone()
@@ -375,12 +378,12 @@ def _restore_from_backup():
 
     import urllib.request
     try:
-        print(f"[restore] backup ブランチから fetch: {BACKUP_URL}")
-        req = urllib.request.Request(BACKUP_URL, headers={"User-Agent": "kyotei-sign"})
+        print(f"[restore] data.json fetch: {DATA_URL}")
+        req = urllib.request.Request(DATA_URL, headers={"User-Agent": "kyotei-sign"})
         with urllib.request.urlopen(req, timeout=60) as r:
             payload = json.loads(r.read())
     except Exception as e:
-        print(f"[restore] 復元データなし or 取得失敗 ({e}) → bootstrap にフォールバック")
+        print(f"[restore] data.json 未配置 or 取得失敗 ({e}) → bootstrap にフォールバック")
         return False
 
     counts = {}
@@ -463,8 +466,8 @@ def main():
     print(f"│  競艇サインマイナー サーバー         │")
     print(f"│  http://0.0.0.0:{PORT}/               │")
     print(f"╰─────────────────────────────────────╯")
-    # まず backup ブランチから復元を試みる。空ならbootstrap
-    restored = _restore_from_backup()
+    # まず data.json から復元を試みる。空ならbootstrap
+    restored = _restore_from_repo()
     if not restored:
         _auto_bootstrap()
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)

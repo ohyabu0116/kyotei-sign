@@ -7,7 +7,7 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python server.py
     healthCheckPath: /api/ping
-    autoDeploy: false
+    autoDeploy: true
     envVars:
       - key: PORT
         value: 10000
