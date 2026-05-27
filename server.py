@@ -41,6 +41,8 @@ INDEX_PATH = os.path.join(BASE_DIR, "index.html")
 # ── ジョブ管理 ───────────────────────────────────────────────────
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
+_collect_lock = threading.Lock()    # 同時に1つのデータ収集ジョブだけ走らせる
+_active_collect_job: dict = {"id": None}
 
 
 def _job_set(job_id: str, **fields) -> None:
@@ -257,7 +259,17 @@ class Handler(BaseHTTPRequestHandler):
         force = bool(body.get("force"))
         if not (start and end):
             return _json_response(self, 400, {"error": "start, end required"})
+
+        # 既に他のジョブが走っているなら拒否
+        if not _collect_lock.acquire(blocking=False):
+            existing = _active_collect_job.get("id")
+            return _json_response(self, 409, {
+                "error": "another collect job is running",
+                "existing_job_id": existing,
+            })
+
         jid = uuid.uuid4().hex[:12]
+        _active_collect_job["id"] = jid
         _job_set(jid, status="running", started_at=datetime.datetime.now().isoformat(),
                  kind="collect", start=start, end=end)
 
@@ -273,6 +285,9 @@ class Handler(BaseHTTPRequestHandler):
                 import traceback; traceback.print_exc()
                 _job_set(jid, status="error", error=str(e),
                          finished_at=datetime.datetime.now().isoformat())
+            finally:
+                _active_collect_job["id"] = None
+                _collect_lock.release()
 
         threading.Thread(target=_run, daemon=True).start()
         return _json_response(self, 200, {"job_id": jid})
@@ -338,7 +353,14 @@ def _auto_bootstrap():
         return
 
     def _run():
+        # 同時にUI/APIから収集が走らないようロックを取る
+        if not _collect_lock.acquire(blocking=False):
+            print("[bootstrap] 別の収集ジョブが既に走っている → スキップ")
+            return
         try:
+            jid = "bootstrap"
+            _active_collect_job["id"] = jid
+            _job_set(jid, status="running", kind="bootstrap")
             import collect as collector
             today = datetime.date.today()
             start = (today - datetime.timedelta(days=days - 1)).strftime("%Y%m%d")
@@ -347,9 +369,14 @@ def _auto_bootstrap():
             r = collector.collect_range(start, end, force=False,
                                         progress=lambda s: print(f"[bootstrap] {s}"))
             print(f"[bootstrap] 完了: {r}")
+            _job_set(jid, status="done", result=r)
         except Exception as e:
             import traceback; traceback.print_exc()
             print(f"[bootstrap] エラー: {e}")
+            _job_set("bootstrap", status="error", error=str(e))
+        finally:
+            _active_collect_job["id"] = None
+            _collect_lock.release()
 
     threading.Thread(target=_run, daemon=True).start()
 
