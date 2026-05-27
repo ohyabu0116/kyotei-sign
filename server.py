@@ -318,13 +318,50 @@ class Handler(BaseHTTPRequestHandler):
         return _json_response(self, 200, r)
 
 
+# ── 起動時オートブートストラップ ─────────────────────────────────
+def _auto_bootstrap():
+    """
+    起動時、DBが空ならバックグラウンドで直近 AUTO_INIT_DAYS 日分を自動収集する。
+    Render 等のエフェメラルディスク環境向け。
+    """
+    days = int(os.environ.get("AUTO_INIT_DAYS", "0"))
+    if days <= 0:
+        return
+    try:
+        with db.get_conn() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM races").fetchone()
+        if row[0] > 0:
+            print(f"[bootstrap] DBに既存データあり (races={row[0]})。スキップ")
+            return
+    except Exception as e:
+        print(f"[bootstrap] DB確認失敗: {e}")
+        return
+
+    def _run():
+        try:
+            import collect as collector
+            today = datetime.date.today()
+            start = (today - datetime.timedelta(days=days - 1)).strftime("%Y%m%d")
+            end = today.strftime("%Y%m%d")
+            print(f"[bootstrap] DB空 → 自動収集開始 ({start}〜{end})")
+            r = collector.collect_range(start, end, force=False,
+                                        progress=lambda s: print(f"[bootstrap] {s}"))
+            print(f"[bootstrap] 完了: {r}")
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            print(f"[bootstrap] エラー: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 # ── 起動 ─────────────────────────────────────────────────────────
 def main():
     db.init_db()
     print(f"╭─────────────────────────────────────╮")
     print(f"│  競艇サインマイナー サーバー         │")
-    print(f"│  http://localhost:{PORT}/             │")
+    print(f"│  http://0.0.0.0:{PORT}/               │")
     print(f"╰─────────────────────────────────────╯")
+    _auto_bootstrap()
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
         httpd.serve_forever()
