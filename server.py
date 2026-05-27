@@ -124,6 +124,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_signs(q)
             if path == "/api/integrity":
                 return self._api_integrity()
+            if path == "/api/export":
+                return self._api_export()
             if path.startswith("/api/job/"):
                 jid = path[len("/api/job/"):]
                 j = _job_get(jid)
@@ -262,6 +264,20 @@ class Handler(BaseHTTPRequestHandler):
             issues = backtest.check_integrity(conn)
         return _json_response(self, 200, issues)
 
+    def _api_export(self):
+        """全DB内容をJSONで返す。GitHub Actions が定期的に叩いてバックアップする。"""
+        db.init_db()
+        with db.get_conn() as conn:
+            data = {
+                "exported_at": datetime.datetime.now().isoformat(),
+                "schema_version": 1,
+                "races": [dict(r) for r in conn.execute("SELECT * FROM races")],
+                "race_entries": [dict(r) for r in conn.execute("SELECT * FROM race_entries")],
+                "race_results": [dict(r) for r in conn.execute("SELECT * FROM race_results")],
+                "signs": [dict(r) for r in conn.execute("SELECT * FROM signs")],
+            }
+        return _json_response(self, 200, data)
+
     def _api_collect(self, body):
         start = body.get("start")
         end = body.get("end")
@@ -342,6 +358,56 @@ class Handler(BaseHTTPRequestHandler):
         return _json_response(self, 200, r)
 
 
+# ── 起動時の backup ブランチ復元 ────────────────────────────────
+BACKUP_URL = "https://raw.githubusercontent.com/ohyabu0116/kyotei-sign/backup/data.json"
+
+
+def _restore_from_backup():
+    """起動時、DBが空なら backup ブランチの data.json から復元する。"""
+    try:
+        with db.get_conn() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM races").fetchone()
+        if row[0] > 0:
+            print(f"[restore] DBに既存データあり (races={row[0]})。復元スキップ")
+            return False
+    except Exception as e:
+        print(f"[restore] DB確認失敗: {e}")
+
+    import urllib.request
+    try:
+        print(f"[restore] backup ブランチから fetch: {BACKUP_URL}")
+        req = urllib.request.Request(BACKUP_URL, headers={"User-Agent": "kyotei-sign"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            payload = json.loads(r.read())
+    except Exception as e:
+        print(f"[restore] 復元データなし or 取得失敗 ({e}) → bootstrap にフォールバック")
+        return False
+
+    counts = {}
+    try:
+        with db.get_conn() as conn:
+            for tbl in ("races", "race_entries", "race_results", "signs"):
+                rows = payload.get(tbl, [])
+                counts[tbl] = len(rows)
+                if not rows:
+                    continue
+                cols = list(rows[0].keys())
+                col_str = ", ".join(cols)
+                ph = ", ".join("?" * len(cols))
+                for row in rows:
+                    conn.execute(
+                        f"INSERT OR REPLACE INTO {tbl} ({col_str}) VALUES ({ph})",
+                        tuple(row.get(c) for c in cols),
+                    )
+            conn.commit()
+        print(f"[restore] 復元完了: {counts}")
+        return True
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        print(f"[restore] DB書き込み失敗: {e}")
+        return False
+
+
 # ── 起動時オートブートストラップ ─────────────────────────────────
 def _auto_bootstrap():
     """
@@ -397,7 +463,10 @@ def main():
     print(f"│  競艇サインマイナー サーバー         │")
     print(f"│  http://0.0.0.0:{PORT}/               │")
     print(f"╰─────────────────────────────────────╯")
-    _auto_bootstrap()
+    # まず backup ブランチから復元を試みる。空ならbootstrap
+    restored = _restore_from_backup()
+    if not restored:
+        _auto_bootstrap()
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
         httpd.serve_forever()
