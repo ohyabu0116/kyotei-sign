@@ -522,12 +522,40 @@ async function startCollect() {
   document.getElementById('collect-status').textContent = '開始中...';
   document.getElementById('collect-log').textContent = '';
   try {
-    const r = await api('/api/collect', {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const resp = await fetch(API_BASE + '/api/collect', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    const r = await resp.json();
+    if (resp.status === 409 && r.existing_job_id) {
+      collectJobId = r.existing_job_id;
+      document.getElementById('collect-status').innerHTML =
+        `<span style="color:var(--warn)">⚠ 既存のジョブ「${collectJobId}」が走行中。そのまま進捗を表示します。</span>`;
+      pollJob();
+      return;
+    }
+    if (!resp.ok) throw new Error(r.error || `HTTP ${resp.status}`);
     collectJobId = r.job_id;
     document.getElementById('collect-status').textContent = `ジョブID: ${collectJobId}`;
     pollJob();
   } catch (e) {
     document.getElementById('collect-status').innerHTML = `<span class="error">${e.message}</span>`;
+  }
+}
+// ページ読込時に進行中のジョブがあれば自動的に拾う
+async function autoAttachCollect() {
+  for (const jid of ['bootstrap']) {
+    try {
+      const j = await api('/api/job/' + jid);
+      if (j.status === 'running') {
+        collectJobId = jid;
+        document.getElementById('collect-status').innerHTML =
+          `<span style="color:var(--warn)">⚠ サーバー側で「${jid}」が走行中。表示中...</span>`;
+        pollJob();
+        return;
+      }
+    } catch {}
   }
 }
 async function pollJob() {
@@ -662,6 +690,7 @@ async function runIntegrity() {
 // 起動時
 refreshStats();
 loadDay();
+autoAttachCollect();
 </script>
 </body>
 </html>
