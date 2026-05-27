@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>競艇サインマイナー</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --bg2: #161b22;
+  --bg3: #21262d;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --accent: #58a6ff;
+  --good: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+  --pink: #e879b9;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  background: var(--bg); color: var(--text); font-size: 14px;
+}
+header {
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 12px 20px; display: flex; align-items: center; gap: 16px;
+  flex-wrap: wrap;
+}
+header h1 {
+  margin: 0; font-size: 18px; font-weight: 600;
+}
+header .pink { color: var(--pink); }
+.stats { display: flex; gap: 16px; flex: 1; flex-wrap: wrap; font-size: 12px; }
+.stats div { color: var(--text-dim); }
+.stats b { color: var(--text); font-weight: 600; font-size: 14px; }
+
+nav.tabs {
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 0 20px; display: flex; gap: 0;
+  overflow-x: auto;
+}
+nav.tabs button {
+  background: none; border: none; color: var(--text-dim);
+  padding: 10px 14px; cursor: pointer; font-size: 13px;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+nav.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+nav.tabs button:hover { color: var(--text); }
+
+main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+section { display: none; }
+section.active { display: block; }
+
+.card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+  padding: 16px; margin-bottom: 16px;
+}
+.card h2 { margin: 0 0 12px; font-size: 16px; }
+
+button.primary {
+  background: var(--accent); color: #fff; border: none; padding: 8px 16px;
+  border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;
+}
+button.primary:hover { opacity: 0.9; }
+button.ghost {
+  background: var(--bg3); color: var(--text); border: 1px solid var(--border);
+  padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
+}
+button.ghost:hover { background: var(--bg); }
+
+input, select {
+  background: var(--bg3); color: var(--text); border: 1px solid var(--border);
+  padding: 6px 10px; border-radius: 4px; font-size: 13px;
+}
+label { color: var(--text-dim); font-size: 12px; margin-right: 6px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: var(--bg3); padding: 8px; text-align: left; border-bottom: 1px solid var(--border); }
+td { padding: 8px; border-bottom: 1px solid var(--border); }
+tr:hover { background: var(--bg3); }
+
+.lane-1 { color: #fff; background: #000; }
+.lane-2 { color: #000; background: #f0f0f0; }
+.lane-3 { color: #fff; background: #d63031; }
+.lane-4 { color: #fff; background: #0984e3; }
+.lane-5 { color: #000; background: #ffeaa7; }
+.lane-6 { color: #fff; background: #00b894; }
+.lane {
+  display: inline-block; width: 24px; height: 24px; line-height: 24px;
+  text-align: center; border-radius: 50%; font-weight: 700; font-size: 12px;
+}
+
+.race-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;
+}
+.race-tile {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px; cursor: pointer; transition: all 0.15s;
+}
+.race-tile:hover { border-color: var(--accent); }
+.race-tile h3 { margin: 0 0 4px; font-size: 14px; }
+.race-tile .meta { color: var(--text-dim); font-size: 11px; }
+.race-tile .fire { color: var(--pink); font-weight: 600; }
+
+.badge {
+  display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 11px;
+  margin-right: 4px;
+}
+.badge.ok { background: var(--good); color: #fff; }
+.badge.bad { background: var(--bad); color: #fff; }
+.badge.warn { background: var(--warn); color: #fff; }
+.badge.dim { background: var(--bg3); color: var(--text-dim); border: 1px solid var(--border); }
+
+pre.log {
+  background: #000; color: #0f0; padding: 12px; border-radius: 4px;
+  font-size: 11px; max-height: 320px; overflow-y: auto; font-family: monospace;
+  white-space: pre-wrap; word-break: break-all;
+}
+
+.sign-row {
+  display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 10px;
+  align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border);
+}
+.sign-row .conf { color: var(--good); font-weight: 700; }
+.sign-row .lift { color: var(--warn); }
+
+.kpi { display: flex; gap: 24px; flex-wrap: wrap; }
+.kpi > div { background: var(--bg3); padding: 12px 16px; border-radius: 6px; min-width: 120px; }
+.kpi b { font-size: 22px; display: block; }
+.kpi span { color: var(--text-dim); font-size: 11px; }
+.error { color: var(--bad); }
+.muted { color: var(--text-dim); }
+.flex { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>競艇サイン<span class="pink">マイナー</span></h1>
+  <div class="stats" id="stats">
+    <div>レース <b id="s-races">-</b></div>
+    <div>結果 <b id="s-results">-</b></div>
+    <div>サイン <b id="s-signs">-</b></div>
+    <div>期間 <b id="s-range">-</b></div>
+  </div>
+  <button class="ghost" onclick="refreshStats()">↻</button>
+</header>
+
+<nav class="tabs">
+  <button data-tab="today" class="active">今日のレース</button>
+  <button data-tab="signs">サイン一覧</button>
+  <button data-tab="race">レース詳細</button>
+  <button data-tab="collect">データ収集</button>
+  <button data-tab="mine">マイニング</button>
+  <button data-tab="backtest">バックテスト</button>
+  <button data-tab="integrity">整合性チェック</button>
+</nav>
+
+<main>
+
+<!-- 今日のレース -->
+<section id="tab-today" class="active">
+  <div class="card">
+    <div class="flex" style="justify-content:space-between">
+      <h2>女子戦レース</h2>
+      <div class="flex">
+        <label>日付</label>
+        <input type="date" id="today-date">
+        <button class="primary" onclick="loadDay()">表示</button>
+      </div>
+    </div>
+    <div id="today-list" class="race-grid"></div>
+  </div>
+</section>
+
+<!-- サイン一覧 -->
+<section id="tab-signs">
+  <div class="card">
+    <h2>抽出済みサイン</h2>
+    <div class="flex" style="margin-bottom:12px">
+      <label>種別</label>
+      <select id="sign-kind">
+        <option value="">すべて</option>
+        <option value="top3_pair">3着以内ペア</option>
+        <option value="win">1着</option>
+      </select>
+      <label>表示</label>
+      <select id="sign-limit"><option>50</option><option>100</option><option>200</option><option>500</option></select>
+      <button class="primary" onclick="loadSigns()">読み込み</button>
+    </div>
+    <div id="signs-list"></div>
+  </div>
+</section>
+
+<!-- レース詳細 -->
+<section id="tab-race">
+  <div class="card">
+    <h2>レース詳細</h2>
+    <div class="flex" style="margin-bottom:12px">
+      <label>日付</label><input id="r-date" type="date">
+      <label>会場</label>
+      <select id="r-jcd"></select>
+      <label>R</label>
+      <select id="r-rno">
+        <option>1</option><option>2</option><option>3</option><option>4</option>
+        <option>5</option><option>6</option><option>7</option><option>8</option>
+        <option>9</option><option>10</option><option>11</option><option>12</option>
+      </select>
+      <button class="primary" onclick="loadRace()">表示</button>
+    </div>
+    <div id="race-detail"></div>
+  </div>
+</section>
+
+<!-- データ収集 -->
+<section id="tab-collect">
+  <div class="card">
+    <h2>過去データ収集</h2>
+    <p class="muted">期間内の女子戦データを boatrace.jp から取得します（1リクエスト 1 秒間隔）。</p>
+    <div class="flex" style="margin-bottom:12px">
+      <label>開始</label><input id="c-start" type="date">
+      <label>終了</label><input id="c-end" type="date">
+      <label><input id="c-force" type="checkbox"> 強制再取得</label>
+      <button class="primary" onclick="startCollect()">収集開始</button>
+    </div>
+    <div id="collect-status"></div>
+    <pre class="log" id="collect-log"></pre>
+  </div>
+</section>
+
+<!-- マイニング -->
+<section id="tab-mine">
+  <div class="card">
+    <h2>サインマイニング</h2>
+    <p class="muted">DBの全データから「選手X@N号艇 → M号艇とP号艇が3着以内」型のサインを抽出します。</p>
+    <div class="flex" style="margin-bottom:12px">
+      <label>最低発火回数</label><input id="m-sup" type="number" value="10" style="width:80px">
+      <label>的中率</label><input id="m-conf" type="number" value="0.80" step="0.05" style="width:80px">
+      <label>リフト</label><input id="m-lift" type="number" value="1.5" step="0.1" style="width:80px">
+      <label>p値</label><input id="m-p" type="number" value="0.05" step="0.01" style="width:80px">
+      <button class="primary" onclick="runMine()">マイニング実行</button>
+    </div>
+    <div id="mine-result"></div>
+  </div>
+</section>
+
+<!-- バックテスト -->
+<section id="tab-backtest">
+  <div class="card">
+    <h2>バックテスト</h2>
+    <p class="muted">学習期間で抽出したサインを、テスト期間に当てはめて的中率・回収率を測定します。</p>
+    <div class="flex" style="margin-bottom:12px">
+      <label>学習開始</label><input id="bt-train-from" type="date">
+      <label>学習終了</label><input id="bt-train-to" type="date">
+      <label>テスト開始</label><input id="bt-test-from" type="date">
+      <label>テスト終了</label><input id="bt-test-to" type="date">
+      <button class="primary" onclick="runBacktest()">実行</button>
+    </div>
+    <div id="bt-result"></div>
+  </div>
+</section>
+
+<!-- 整合性 -->
+<section id="tab-integrity">
+  <div class="card">
+    <h2>データ整合性チェック</h2>
+    <div class="flex" style="margin-bottom:12px">
+      <button class="primary" onclick="runIntegrity()">チェック実行</button>
+    </div>
+    <div id="integrity-result"></div>
+  </div>
+</section>
+
+</main>
+
+<script>
+const VENUES = {
+  "01":"桐生","02":"戸田","03":"江戸川","04":"平和島","05":"多摩川","06":"浜名湖",
+  "07":"蒲郡","08":"常滑","09":"津","10":"三国","11":"びわこ","12":"住之江",
+  "13":"尼崎","14":"鳴門","15":"丸亀","16":"児島","17":"宮島","18":"徳山",
+  "19":"下関","20":"若松","21":"芦屋","22":"福岡","23":"唐津","24":"大村"
+};
+
+// タブ切替
+document.querySelectorAll('nav.tabs button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('nav.tabs button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+    document.getElementById('tab-' + b.dataset.tab).classList.add('active');
+  });
+});
+
+// 会場プルダウン
+const rJcdSel = document.getElementById('r-jcd');
+Object.entries(VENUES).forEach(([k, v]) => {
+  const o = document.createElement('option'); o.value = k; o.textContent = `${k} ${v}`;
+  rJcdSel.appendChild(o);
+});
+
+// 初期日付
+function ymd(d) {
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function ymd_nohyphen(s) { return s.replace(/-/g, ''); }
+const today = new Date();
+['today-date', 'r-date'].forEach(id => { document.getElementById(id).value = ymd(today); });
+const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth()-1);
+document.getElementById('c-end').value = ymd(today);
+document.getElementById('c-start').value = ymd(monthAgo);
+const sixMo = new Date(); sixMo.setMonth(sixMo.getMonth()-6);
+document.getElementById('bt-train-from').value = ymd(sixMo);
+const threeMoAgo = new Date(); threeMoAgo.setMonth(threeMoAgo.getMonth()-3);
+document.getElementById('bt-train-to').value = ymd(threeMoAgo);
+document.getElementById('bt-test-from').value = ymd(threeMoAgo);
+document.getElementById('bt-test-to').value = ymd(today);
+
+// API helpers
+async function api(path, opts={}) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(`${path}: ${r.status}`);
+  return r.json();
+}
+
+async function refreshStats() {
+  try {
+    const s = await api('/api/stats');
+    document.getElementById('s-races').textContent = s.races;
+    document.getElementById('s-results').textContent = s.race_results;
+    document.getElementById('s-signs').textContent = s.signs;
+    if (s.date_range[0]) {
+      document.getElementById('s-range').textContent = `${s.date_range[0]}〜${s.date_range[1]}`;
+    }
+  } catch (e) { console.error(e); }
+}
+
+// 今日の表示
+async function loadDay() {
+  const date = ymd_nohyphen(document.getElementById('today-date').value);
+  const list = document.getElementById('today-list');
+  list.innerHTML = '<p class="muted">読み込み中...</p>';
+  try {
+    const d = await api('/api/day?date=' + date);
+    if (!d.ladies_venues.length) {
+      list.innerHTML = '<p class="muted">この日の女子戦はありません</p>';
+      return;
+    }
+    list.innerHTML = '';
+    for (const v of d.ladies_venues) {
+      for (let rno = 1; rno <= 12; rno++) {
+        const tile = document.createElement('div');
+        tile.className = 'race-tile';
+        tile.innerHTML = `
+          <h3>${v.venue} ${rno}R</h3>
+          <div class="meta">${v.title}</div>
+          <div class="meta">jcd=${v.jcd}</div>
+          <div id="fire-${v.jcd}-${rno}" class="fire muted">読込中...</div>
+        `;
+        tile.onclick = () => {
+          document.querySelector('nav.tabs button[data-tab=race]').click();
+          document.getElementById('r-date').value = document.getElementById('today-date').value;
+          document.getElementById('r-jcd').value = v.jcd;
+          document.getElementById('r-rno').value = rno;
+          loadRace();
+        };
+        list.appendChild(tile);
+        // 発火サイン取得（非同期）
+        fetch(`/api/race?date=${date}&jcd=${v.jcd}&rno=${rno}`)
+          .then(r => r.json())
+          .then(j => {
+            const el = document.getElementById(`fire-${v.jcd}-${rno}`);
+            if (j.fires && j.fires.length) {
+              el.textContent = `🔥 サイン ${j.fires.length} 発火`;
+              el.className = 'fire';
+            } else {
+              el.textContent = 'サイン無し';
+              el.className = 'muted';
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  } catch (e) {
+    list.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
+  }
+}
+
+// サイン一覧
+async function loadSigns() {
+  const kind = document.getElementById('sign-kind').value;
+  const limit = document.getElementById('sign-limit').value;
+  const wrap = document.getElementById('signs-list');
+  wrap.innerHTML = '<p class="muted">読み込み中...</p>';
+  try {
+    const d = await api(`/api/signs?kind=${kind}&limit=${limit}`);
+    if (!d.signs.length) {
+      wrap.innerHTML = '<p class="muted">サインがありません。<br>「マイニング」タブで実行してください。</p>';
+      return;
+    }
+    let html = '<table><thead><tr><th>選手</th><th>登番</th><th>条件</th><th>結果</th><th>種別</th><th>発火</th><th>的中</th><th>的中率</th><th>リフト</th><th>p値</th></tr></thead><tbody>';
+    for (const s of d.signs) {
+      html += `<tr>
+        <td>${s.racer_name||''}</td>
+        <td class="muted">${s.toban}</td>
+        <td><span class="lane lane-${s.cond_lane}">${s.cond_lane}</span></td>
+        <td>${formatTarget(s)}</td>
+        <td>${s.target_kind==='top3_pair'?'3着以内':'1着'}</td>
+        <td>${s.support}</td>
+        <td>${s.hits}</td>
+        <td><b style="color:var(--good)">${(s.confidence*100).toFixed(1)}%</b></td>
+        <td style="color:var(--warn)">${s.lift?.toFixed(2)}</td>
+        <td class="muted">${s.p_value?.toFixed(4)}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    wrap.innerHTML = `<div class="muted" style="margin-bottom:8px">${d.count}件</div>` + html;
+  } catch (e) {
+    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
+  }
+}
+function formatTarget(s) {
+  if (s.target_kind === 'top3_pair') {
+    const [a, b] = s.target_pair.split('-');
+    return `<span class="lane lane-${a}">${a}</span>+<span class="lane lane-${b}">${b}</span>`;
+  }
+  return `<span class="lane lane-${s.target_pair}">${s.target_pair}</span>`;
+}
+
+// レース詳細
+async function loadRace() {
+  const date = ymd_nohyphen(document.getElementById('r-date').value);
+  const jcd = document.getElementById('r-jcd').value;
+  const rno = document.getElementById('r-rno').value;
+  const wrap = document.getElementById('race-detail');
+  wrap.innerHTML = '<p class="muted">読み込み中...</p>';
+  try {
+    const d = await api(`/api/race?date=${date}&jcd=${jcd}&rno=${rno}`);
+    let html = '';
+    if (d.race) {
+      html += `<h3>${d.race.venue} ${d.race.rno}R - ${d.race.title}</h3>`;
+    }
+    // 出走表
+    if (d.entries && d.entries.length) {
+      html += '<h4>出走表</h4><table><thead><tr><th>艇</th><th>選手</th><th>登番</th><th>級</th><th>年齢/体重</th><th>F/L/ST</th><th>全国(勝/2/3)</th><th>当地(勝/2/3)</th><th>モ</th><th>艇</th></tr></thead><tbody>';
+      for (const e of d.entries) {
+        html += `<tr>
+          <td><span class="lane lane-${e.lane}">${e.lane}</span></td>
+          <td><b>${e.name||''}</b></td>
+          <td class="muted">${e.toban||''}</td>
+          <td>${e.rank||''}</td>
+          <td>${e.age||''}/${e.weight||''}</td>
+          <td class="muted">F${e.flying||0}/L${e.late||0}/${e.avg_st||'-'}</td>
+          <td>${e.national_win||'-'}/${e.national_2||'-'}/${e.national_3||'-'}</td>
+          <td>${e.local_win||'-'}/${e.local_2||'-'}/${e.local_3||'-'}</td>
+          <td>#${e.motor_no||'-'} ${e.motor_2||'-'}%</td>
+          <td>#${e.boat_no||'-'} ${e.boat_2||'-'}%</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    // 発火サイン
+    html += '<h4 style="margin-top:20px">🔥 発火サイン</h4>';
+    if (!d.fires || !d.fires.length) {
+      html += '<p class="muted">このレースで発火するサインはありません。</p>';
+    } else {
+      html += '<div>';
+      for (const f of d.fires) {
+        html += `<div class="sign-row">
+          <span class="lane lane-${f.cond_lane}">${f.cond_lane}</span>
+          <span><b>${f.racer_name}</b> (${f.toban}) → ${formatTarget(f)} (${f.target_kind==='top3_pair'?'3着以内':'1着'})</span>
+          <span>発火 ${f.support}</span>
+          <span class="conf">${(f.confidence*100).toFixed(1)}%</span>
+          <span class="lift">×${f.lift?.toFixed(2)}</span>
+        </div>`;
+      }
+      html += '</div>';
+    }
+    // 結果
+    if (d.result) {
+      html += '<h4 style="margin-top:20px">結果</h4>';
+      let fin = [];
+      try { fin = JSON.parse(d.result.finish_json || '[]'); } catch {}
+      html += '<table><thead><tr><th>着</th><th>艇</th><th>選手</th></tr></thead><tbody>';
+      for (const r of fin) {
+        const [rank, lane, toban, name] = r;
+        html += `<tr><td><b>${rank}</b></td><td><span class="lane lane-${lane}">${lane}</span></td><td>${name} (${toban})</td></tr>`;
+      }
+      html += '</tbody></table>';
+      html += `<p>決まり手: <b>${d.result.determinant||'-'}</b></p>`;
+      html += `<p>3連単 ${d.result.payout_3t||'-'} ¥${d.result.payout_3t_yen||0}</p>`;
+      html += `<p>3連複 ${d.result.payout_3f||'-'} ¥${d.result.payout_3f_yen||0}</p>`;
+    }
+    wrap.innerHTML = html;
+  } catch (e) {
+    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
+  }
+}
+
+// データ収集
+let collectJobId = null;
+async function startCollect() {
+  const body = {
+    start: ymd_nohyphen(document.getElementById('c-start').value),
+    end: ymd_nohyphen(document.getElementById('c-end').value),
+    force: document.getElementById('c-force').checked,
+  };
+  document.getElementById('collect-status').textContent = '開始中...';
+  document.getElementById('collect-log').textContent = '';
+  try {
+    const r = await api('/api/collect', {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    collectJobId = r.job_id;
+    document.getElementById('collect-status').textContent = `ジョブID: ${collectJobId}`;
+    pollJob();
+  } catch (e) {
+    document.getElementById('collect-status').innerHTML = `<span class="error">${e.message}</span>`;
+  }
+}
+async function pollJob() {
+  if (!collectJobId) return;
+  try {
+    const j = await api('/api/job/' + collectJobId);
+    document.getElementById('collect-status').innerHTML = `状態: <b>${j.status}</b>`;
+    document.getElementById('collect-log').textContent = (j.log||[]).join('\n');
+    const logEl = document.getElementById('collect-log');
+    logEl.scrollTop = logEl.scrollHeight;
+    if (j.status === 'done') {
+      refreshStats();
+      document.getElementById('collect-status').innerHTML += ` 完了: ${JSON.stringify(j.result)}`;
+      return;
+    }
+    if (j.status === 'error') return;
+    setTimeout(pollJob, 1500);
+  } catch (e) {
+    document.getElementById('collect-status').innerHTML = `<span class="error">${e.message}</span>`;
+  }
+}
+
+// マイニング
+async function runMine() {
+  const body = {
+    min_support: parseInt(document.getElementById('m-sup').value),
+    min_confidence: parseFloat(document.getElementById('m-conf').value),
+    min_lift: parseFloat(document.getElementById('m-lift').value),
+    max_p_value: parseFloat(document.getElementById('m-p').value),
+  };
+  const wrap = document.getElementById('mine-result');
+  wrap.innerHTML = '<p class="muted">処理中...</p>';
+  try {
+    const r = await api('/api/mine', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    let html = `<div class="kpi">
+      <div><b>${r.races}</b><span>対象レース</span></div>
+      <div><b>${r.signs_extracted}</b><span>抽出サイン</span></div>
+    </div>`;
+    if (r.top10 && r.top10.length) {
+      html += '<h4>Top 10 サイン</h4><div>';
+      for (const s of r.top10) {
+        html += `<div class="sign-row">
+          <span class="lane lane-${s.cond_lane}">${s.cond_lane}</span>
+          <span><b>${s.racer_name}</b> → ${formatTarget(s)}</span>
+          <span>${s.hits}/${s.support}</span>
+          <span class="conf">${(s.confidence*100).toFixed(1)}%</span>
+          <span class="lift">×${s.lift?.toFixed(2)}</span>
+        </div>`;
+      }
+      html += '</div>';
+    }
+    wrap.innerHTML = html;
+    refreshStats();
+  } catch (e) {
+    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
+  }
+}
+
+// バックテスト
+async function runBacktest() {
+  const body = {
+    train_from: ymd_nohyphen(document.getElementById('bt-train-from').value),
+    train_to: ymd_nohyphen(document.getElementById('bt-train-to').value),
+    test_from: ymd_nohyphen(document.getElementById('bt-test-from').value),
+    test_to: ymd_nohyphen(document.getElementById('bt-test-to').value),
+  };
+  const wrap = document.getElementById('bt-result');
+  wrap.innerHTML = '<p class="muted">処理中...</p>';
+  try {
+    const r = await api('/api/backtest', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    let html = `<div class="kpi">
+      <div><b>${r.train_races}</b><span>学習レース</span></div>
+      <div><b>${r.test_races}</b><span>テストレース</span></div>
+      <div><b>${r.signs_extracted}</b><span>抽出サイン</span></div>
+      <div><b>${r.overall_fires}</b><span>発火レース</span></div>
+      <div><b>${(r.overall_race_hit_rate*100).toFixed(1)}%</b><span>レース別的中率</span></div>
+    </div>`;
+    html += '<h4 style="margin-top:16px">種別ごと</h4>';
+    for (const [k, v] of Object.entries(r.per_kind || {})) {
+      html += `<div class="card" style="background:var(--bg3)">
+        <h4>${k === 'top3_pair' ? '3着以内ペア' : '1着'}</h4>
+        <div class="kpi">
+          <div><b>${v.fires}</b><span>発火</span></div>
+          <div><b>${v.hits}</b><span>的中</span></div>
+          <div><b>${(v.accuracy*100).toFixed(1)}%</b><span>的中率</span></div>
+          <div><b>${(v.roi*100).toFixed(1)}%</b><span>ROI</span></div>
+          <div><b>¥${v.stake.toLocaleString()}</b><span>投資</span></div>
+          <div><b>¥${v.payout.toLocaleString()}</b><span>払戻</span></div>
+        </div>
+      </div>`;
+    }
+    wrap.innerHTML = html;
+  } catch (e) {
+    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
+  }
+}
+
+// 整合性
+async function runIntegrity() {
+  const wrap = document.getElementById('integrity-result');
+  wrap.innerHTML = '<p class="muted">処理中...</p>';
+  try {
+    const r = await api('/api/integrity');
+    const s = r.summary;
+    let html = `<div class="kpi">
+      <div><b>${s.total_races}</b><span>全レース</span></div>
+      <div><b style="color:var(--good)">${s.ok}</b><span>正常</span></div>
+      <div><b style="color:${s.issues>0?'var(--bad)':'var(--good)'}">${s.issues}</b><span>異常</span></div>
+      <div><b>${s.missing_entries}</b><span>出走表欠損</span></div>
+      <div><b>${s.missing_finish}</b><span>結果欠損</span></div>
+      <div><b>${s.lane_mismatch}</b><span>艇番不一致</span></div>
+      <div><b>${s.missing_payout}</b><span>配当欠損</span></div>
+    </div>`;
+    const sections = [
+      ['missing_entries', '出走表欠損'],
+      ['missing_finish', '結果欠損'],
+      ['lane_mismatch', '艇番不一致'],
+      ['missing_payout', '配当欠損'],
+    ];
+    for (const [key, label] of sections) {
+      const items = r[key] || [];
+      if (items.length) {
+        html += `<h4>${label} (${items.length})</h4><pre class="log">${items.slice(0,50).map(i=>JSON.stringify(i)).join('\n')}</pre>`;
+      }
+    }
+    wrap.innerHTML = html;
+  } catch (e) {
+    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
+  }
+}
+
+// 起動時
+refreshStats();
+loadDay();
+</script>
+</body>
+</html>

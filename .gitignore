@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+__pycache__/
+*.pyc
+
+# Local DB
+kyotei_sign.db
+kyotei_sign.db-journal
+kyotei_sign.db-wal
+kyotei_sign.db-shm
+
+# Cache
+html_cache/
+
+# Claude
+.claude/
+
+# Logs
+*.log
