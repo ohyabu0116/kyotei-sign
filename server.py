@@ -35,7 +35,7 @@ import miner
 import backtest
 import saver
 
-APP_VERSION = "2.0"
+APP_VERSION = "2.1"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -374,17 +374,27 @@ class Handler(BaseHTTPRequestHandler):
             "min_confidence": float(body.get("min_confidence", 0.80)),
             "min_lift": float(body.get("min_lift", 1.5)),
             "max_p_value": float(body.get("max_p_value", 0.05)),
+            "max_q": float(body.get("max_q", 0.05)),
         }
         db.init_db()
         with db.get_conn() as conn:
             races = miner.load_races(conn, ladies_only=True)
             signs = miner.mine_signs(races, **params)
             n = miner.save_signs(conn, signs)
+            # プラセボ(並べ替え)検定: 実測の採用数が偶然を超えるか
+            placebo = miner.placebo_eval(
+                races,
+                min_support=params["min_support"],
+                min_confidence=params["min_confidence"],
+                min_lift=params["min_lift"],
+                max_q=params["max_q"],
+            )
         return _json_response(self, 200, {
             "races": len(races),
             "signs_extracted": n,
             "params": params,
-            "top10": signs[:10],
+            "placebo": placebo,
+            "top10": signs[:10],  # 各サインに q_value を含む
         })
 
     def _api_backtest(self, body):

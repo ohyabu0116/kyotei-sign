@@ -125,7 +125,7 @@ pre.log {
 }
 
 .sign-row {
-  display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 10px;
+  display: grid; grid-template-columns: auto 1fr auto auto auto auto; gap: 10px;
   align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border);
 }
 .sign-row .conf { color: var(--good); font-weight: 700; }
@@ -143,7 +143,7 @@ pre.log {
 <body>
 
 <header>
-  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v2.0</span></h1>
+  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v2.1</span></h1>
   <div class="stats" id="stats">
     <div>レース <b id="s-races">-</b></div>
     <div>結果 <b id="s-results">-</b></div>
@@ -255,12 +255,16 @@ pre.log {
 <section id="tab-mine">
   <div class="card">
     <h2>サインマイニング</h2>
-    <p class="muted">DBの全データから「選手X@N号艇 → M号艇とP号艇が3着以内」型のサインを抽出します。</p>
+    <p class="muted">DBの全データから「選手X@N号艇 → M号艇とP号艇が3着以内」型のサインを抽出します。
+      数千の仮説を検定するため、<b>多重比較補正（Benjamini-Hochberg FDR）</b>を掛け、
+      q値がしきい未満の「本物」だけを採用します。プラセボ（着順をレース間でシャッフル）検定で、
+      採用数が偶然を超えるかも併せて評価します。</p>
     <div class="flex" style="margin-bottom:12px">
       <label>最低発火回数</label><input id="m-sup" type="number" value="10" style="width:80px">
       <label>的中率</label><input id="m-conf" type="number" value="0.80" step="0.05" style="width:80px">
       <label>リフト</label><input id="m-lift" type="number" value="1.5" step="0.1" style="width:80px">
       <label>p値</label><input id="m-p" type="number" value="0.05" step="0.01" style="width:80px">
+      <label>q値(FDR)</label><input id="m-q" type="number" value="0.05" step="0.01" style="width:80px">
       <button class="primary" onclick="runMine()">マイニング実行</button>
     </div>
     <div id="mine-result"></div>
@@ -425,11 +429,11 @@ async function loadSigns() {
   try {
     const d = await api(`/api/signs?kind=${kind}&limit=${limit}`);
     if (!d.signs.length) {
-      wrap.innerHTML = '<p class="muted">サインがありません。<br>「マイニング」タブで実行してください。</p>';
+      wrap.innerHTML = '<p class="muted">現データでは多重比較補正(FDR)後に有意なサインはありません。<br>データ収集完了後に再評価されます。</p>';
       return;
     }
-    let html = `<div class="muted" style="margin-bottom:8px">${d.count}件（行をタップで事例を表示）</div>`;
-    html += '<table><thead><tr><th></th><th>選手</th><th>条件</th><th>結果</th><th>種別</th><th>発火</th><th>的中</th><th>的中率</th><th>リフト</th></tr></thead><tbody>';
+    let html = `<div class="muted" style="margin-bottom:8px">${d.count}件（行をタップで事例を表示）・q値=多重比較補正(FDR)後の有意性</div>`;
+    html += '<table><thead><tr><th></th><th>選手</th><th>条件</th><th>結果</th><th>種別</th><th>発火</th><th>的中</th><th>的中率</th><th>リフト</th><th>q値</th></tr></thead><tbody>';
     d.signs.forEach((s, i) => {
       html += `<tr style="cursor:pointer" onclick="toggleSignDetail(${i})">
         <td class="muted">▶</td>
@@ -441,8 +445,9 @@ async function loadSigns() {
         <td>${s.hits}</td>
         <td><b style="color:var(--good)">${(s.confidence*100).toFixed(1)}%</b></td>
         <td style="color:var(--warn)">${s.lift?.toFixed(2)}</td>
+        <td class="muted">${s.q_value!=null?Number(s.q_value).toFixed(4):'-'}</td>
       </tr>
-      <tr id="sd-${i}" style="display:none"><td colspan="9" style="background:var(--bg)"><div id="sd-body-${i}" class="muted">読み込み中...</div></td></tr>`;
+      <tr id="sd-${i}" style="display:none"><td colspan="10" style="background:var(--bg)"><div id="sd-body-${i}" class="muted">読み込み中...</div></td></tr>`;
     });
     html += '</tbody></table>';
     window._signs = d.signs;
@@ -695,15 +700,36 @@ async function runMine() {
     min_confidence: parseFloat(document.getElementById('m-conf').value),
     min_lift: parseFloat(document.getElementById('m-lift').value),
     max_p_value: parseFloat(document.getElementById('m-p').value),
+    max_q: parseFloat(document.getElementById('m-q').value),
   };
   const wrap = document.getElementById('mine-result');
-  wrap.innerHTML = '<p class="muted">処理中...</p>';
+  wrap.innerHTML = '<p class="muted">処理中...（プラセボ検定のため数十秒かかる場合があります）</p>';
   try {
     const r = await api('/api/mine', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     let html = `<div class="kpi">
       <div><b>${r.races}</b><span>対象レース</span></div>
-      <div><b>${r.signs_extracted}</b><span>抽出サイン</span></div>
+      <div><b>${r.signs_extracted}</b><span>採用サイン(FDR後)</span></div>
     </div>`;
+    // プラセボ要約バナー
+    if (r.placebo) {
+      const p = r.placebo;
+      const sig = (p.empirical_p < 0.05);
+      const color = sig ? 'var(--good)' : 'var(--bad)';
+      const verdict = sig
+        ? `観測された採用サイン数は偶然の期待を有意に超えています（本物が混じっている可能性）。`
+        : `観測された採用サイン数は偶然の範囲内です（多重比較由来の偽陽性の疑いが濃厚）。`;
+      html += `<div class="card" style="background:var(--bg3);border-left:3px solid ${color};margin-top:12px">
+        <h4 style="margin-top:0">プラセボ（並べ替え）検定</h4>
+        <div class="kpi">
+          <div><b>${p.observed}</b><span>実測 採用数</span></div>
+          <div><b>${p.null_mean}</b><span>偶然の平均</span></div>
+          <div><b>${p.null_p95}</b><span>偶然の95%点</span></div>
+          <div><b>${p.null_max}</b><span>偶然の最大</span></div>
+          <div><b style="color:${color}">p=${p.empirical_p}</b><span>経験的p値 (×${p.n_iter})</span></div>
+        </div>
+        <p class="muted" style="margin-bottom:0;color:${color}">${verdict}</p>
+      </div>`;
+    }
     if (r.top10 && r.top10.length) {
       html += '<h4>Top 10 サイン</h4><div>';
       for (const s of r.top10) {
@@ -713,9 +739,12 @@ async function runMine() {
           <span>${s.hits}/${s.support}</span>
           <span class="conf">${(s.confidence*100).toFixed(1)}%</span>
           <span class="lift">×${s.lift?.toFixed(2)}</span>
+          <span class="muted" style="font-size:11px">q=${s.q_value!=null?s.q_value:'-'}</span>
         </div>`;
       }
       html += '</div>';
+    } else {
+      html += `<p class="muted" style="margin-top:12px">現データでは多重比較補正(FDR)後に有意なサインはありません。データ収集完了後に再評価されます。</p>`;
     }
     wrap.innerHTML = html;
     refreshStats();
