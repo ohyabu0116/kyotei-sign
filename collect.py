@@ -23,14 +23,18 @@ import scraper
 import db
 
 
-def daterange(start: str, end: str):
+def daterange(start: str, end: str, reverse: bool = False):
     s = datetime.datetime.strptime(start, "%Y%m%d").date()
     e = datetime.datetime.strptime(end, "%Y%m%d").date()
-    step = datetime.timedelta(days=1)
+    days = []
     cur = s
     while cur <= e:
-        yield cur.strftime("%Y%m%d")
-        cur += step
+        days.append(cur.strftime("%Y%m%d"))
+        cur += datetime.timedelta(days=1)
+    if reverse:
+        days.reverse()  # 新しい日付から収集（現役選手データを先に貯める）
+    for d in days:
+        yield d
 
 
 def has_card_in_db(conn, date: str, jcd: str, rno: int) -> bool:
@@ -104,13 +108,13 @@ def collect_day(date: str, *, force: bool = False,
     return stats
 
 
-def collect_range(start: str, end: str, *, force: bool = False,
+def collect_range(start: str, end: str, *, force: bool = False, reverse: bool = False,
                   progress: Optional[Callable[[str], None]] = None) -> dict:
     """期間内の女子戦データを収集"""
     progress = progress or (lambda s: print(s, flush=True))
     grand: dict = {"days": 0, "cards": 0, "results": 0, "errors": 0, "skipped": 0,
                    "started_at": datetime.datetime.now().isoformat()}
-    for d in daterange(start, end):
+    for d in daterange(start, end, reverse=reverse):
         s = collect_day(d, force=force, progress=progress)
         grand["days"] += 1
         for k in ("cards", "results", "errors", "skipped"):
@@ -130,7 +134,8 @@ if __name__ == "__main__":
     elif cmd == "backfill":
         start, end = sys.argv[2], sys.argv[3]
         force = "--force" in sys.argv
-        print(collect_range(start, end, force=force))
+        reverse = "--reverse" in sys.argv
+        print(collect_range(start, end, force=force, reverse=reverse))
     else:
         print(__doc__)
         sys.exit(1)
