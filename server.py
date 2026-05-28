@@ -35,7 +35,7 @@ import miner
 import backtest
 import saver
 
-APP_VERSION = "1.9"
+APP_VERSION = "2.0"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
