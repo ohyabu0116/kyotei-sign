@@ -33,8 +33,9 @@ import scraper
 import db
 import miner
 import backtest
+import saver
 
-APP_VERSION = "1.0"
+APP_VERSION = "1.1"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -129,6 +130,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_integrity()
             if path == "/api/export":
                 return self._api_export()
+            if path == "/api/save":
+                r = saver.save_now(reason="api")
+                return _json_response(self, 200 if r.get("ok") else 500, r)
             if path.startswith("/api/job/"):
                 jid = path[len("/api/job/"):]
                 j = _job_get(jid)
@@ -482,6 +486,8 @@ def main():
     restored = _restore_from_repo()
     if not restored:
         _auto_bootstrap()
+    # サーバー自身による定期GitHub保存（GH_TOKENがあれば有効）
+    saver.start_autosave_loop()
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
         httpd.serve_forever()
