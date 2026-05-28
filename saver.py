@@ -132,21 +132,69 @@ def save_now(reason: str = "manual") -> dict:
             return {"ok": False, "reason": f"commit失敗: {e}"}
 
 
+def _local_race_count() -> int:
+    try:
+        with db.get_conn() as conn:
+            return conn.execute("SELECT COUNT(*) FROM races").fetchone()[0]
+    except Exception:
+        return 0
+
+
+def sync_from_remote() -> dict:
+    """data ブランチの方がレース数が多ければ取り込む（Macの大量データをミラー）"""
+    url = f"https://raw.githubusercontent.com/{GH_REPO}/{GH_BRANCH}/{GH_PATH}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "kyotei-sign-saver"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            payload = json.loads(r.read())
+    except Exception as e:
+        return {"ok": False, "reason": f"fetch失敗: {e}"}
+
+    remote = len(payload.get("races", []))
+    local = _local_race_count()
+    if remote <= local:
+        return {"ok": True, "skipped": True, "local": local, "remote": remote}
+
+    try:
+        with db.get_conn() as conn:
+            for tbl in ("races", "race_entries", "race_results", "signs"):
+                rows = payload.get(tbl, [])
+                if not rows:
+                    continue
+                cols = list(rows[0].keys())
+                cs = ", ".join(cols)
+                ph = ", ".join("?" * len(cols))
+                for row in rows:
+                    conn.execute(
+                        f"INSERT OR REPLACE INTO {tbl} ({cs}) VALUES ({ph})",
+                        tuple(row.get(c) for c in cols),
+                    )
+            conn.commit()
+        return {"ok": True, "merged": True, "local_before": local, "remote": remote}
+    except Exception as e:
+        return {"ok": False, "reason": f"merge失敗: {e}"}
+
+
 def start_autosave_loop():
-    """バックグラウンドで定期保存ループを開始（GH_TOKENがあれば）"""
+    """
+    バックグラウンドで定期同期ループを開始。
+    - GH_TOKENがあれば: local > remote のとき push（保存）
+    - 常時: remote > local のとき pull（ミラー）→ Macの大量データをWebに反映
+    """
     token = os.environ.get("GH_TOKEN")
-    if not token:
-        print("[autosave] GH_TOKEN未設定 → サーバー自動保存は無効（watchdog/手動に依存）")
-        return
 
     def _loop():
-        print(f"[autosave] 開始: {AUTOSAVE_INTERVAL}秒ごとに {GH_BRANCH}/data.json を更新")
+        print(f"[sync] 開始: {AUTOSAVE_INTERVAL}秒ごとに {GH_BRANCH} と同期 (push={'有' if token else '無'})")
         while True:
             time.sleep(AUTOSAVE_INTERVAL)
-            r = save_now(reason="periodic")
-            if r.get("ok") and not r.get("skipped"):
-                print(f"[autosave] 保存: races={r.get('races')}")
-            elif not r.get("ok"):
-                print(f"[autosave] スキップ: {r.get('reason')}")
+            # まず remote の方が多ければ取り込む（Webに最新を反映）
+            pull = sync_from_remote()
+            if pull.get("merged"):
+                print(f"[sync] pull: {pull.get('local_before')}→{pull.get('remote')}")
+            # 次に local の方が多ければ push（GH_TOKENがある時のみ）
+            if token:
+                push = save_now(reason="periodic")
+                if push.get("ok") and not push.get("skipped"):
+                    print(f"[sync] push: races={push.get('races')}")
 
     threading.Thread(target=_loop, daemon=True).start()
