@@ -94,7 +94,6 @@ CREATE TABLE IF NOT EXISTS signs (
     confidence  REAL NOT NULL,      -- hits / support
     lift        REAL,
     p_value     REAL,
-    q_value     REAL,               -- 多重比較補正後のFDR q値 (Benjamini-Hochberg)
     last_seen   TEXT,
     discovered_at TEXT,
     UNIQUE(toban, cond_lane, target_pair, target_kind)
@@ -132,16 +131,7 @@ def init_db(db_path: str = DB_PATH) -> None:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA synchronous = NORMAL")
         conn.executescript(SCHEMA)
-        _migrate(conn)
         conn.commit()
-
-
-def _migrate(conn: sqlite3.Connection) -> None:
-    """冪等マイグレーション: 既存DBに不足している列を追加する（既存データは壊さない）。"""
-    # signs.q_value (多重比較補正後のFDR q値)
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(signs)")}
-    if "q_value" not in cols:
-        conn.execute("ALTER TABLE signs ADD COLUMN q_value REAL")
 
 
 @contextmanager

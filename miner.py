@@ -8,16 +8,11 @@
   結果部 (RHS):  M号艇 と P号艇 が両方3着以内    （target_kind='top3_pair'）
                  または M号艇 が1着             （target_kind='win'）
 
-【採用基準（厳しめ・多重比較補正あり）】
+【採用基準（厳しめ）】
   - support     >= 10
   - confidence  >= 0.80
   - lift        >= 1.5
-  - q-value     <  0.05  （Benjamini-Hochberg FDR 補正後）
-
-  ※ 二項検定 p値は数千の仮説に対して片側検定で算出するため、補正なしでは
-    偽陽性が大量に混入する。そこで support>=min_support を満たす全仮説
-    （(toban,lane,pair) と (toban,lane,m)）のファミリ全体で BH-FDR を適用し、
-    q_value < max_q を採用条件とする。各サインには q_value を付与する。
+  - p-value     <  0.05  （二項検定: 観測した的中率 > 母比率 を片側検定）
 
 実装は1パススキャン。約2年分の女子戦データなら数秒で終わる。
 """
@@ -25,7 +20,6 @@ from __future__ import annotations
 
 import json
 import math
-import random
 import datetime
 from collections import defaultdict
 from typing import Iterable
@@ -63,28 +57,6 @@ def binom_sf(k: int, n: int, p: float) -> float:
         if math.exp(log_term) < 1e-15 and i > k + 50:
             break
     return min(max(total, 0.0), 1.0)
-
-
-def bh_fdr(pvals: list[float]) -> list[float]:
-    """
-    Benjamini-Hochberg の q値（FDR調整p値）を、入力と同じ順序で返す。
-
-    pvals: list[float]
-    returns: list[float]  各仮説の q値（単調化済み・[0,1]にクリップ）
-    """
-    m = len(pvals)
-    if m == 0:
-        return []
-    order = sorted(range(m), key=lambda i: pvals[i])
-    q = [0.0] * m
-    prev = 1.0
-    # 大きいp値→小さいp値の順で単調化（q_(k) = min over j>=k of p_(j)*m/j）
-    for rank in range(m - 1, -1, -1):
-        i = order[rank]
-        val = pvals[i] * m / (rank + 1)
-        prev = min(prev, val)
-        q[i] = min(prev, 1.0)
-    return q
 
 
 # ── ロード ───────────────────────────────────────────────────────
@@ -130,20 +102,21 @@ def load_races(conn, *, ladies_only: bool = True,
 
 
 # ── マイニング ───────────────────────────────────────────────────
-def _scan_family(races: list[dict], min_support: int) -> tuple[list[dict], dict[str, str]]:
+def mine_signs(races: list[dict], *,
+               min_support: int = 10,
+               min_confidence: float = 0.80,
+               min_lift: float = 1.5,
+               max_p_value: float = 0.05) -> list[dict]:
     """
-    全レースを1パス走査し、support>=min_support を満たす検定仮説ファミリ全体を返す。
-
-    返すのは「フィルタ前」の全仮説（(toban,lane,pair) と (toban,lane,m)）。
-    各仮説 dict: {toban, cond_lane, target_pair, target_kind, support, hits,
-                  confidence, lift, p_value}
-    BH-FDR はこのファミリ全体に対して掛けるのが正しい（採用フィルタ後ではない）。
-
-    returns: (candidates, toban_name)
+    全レースを1パスで走査し、サインを抽出して返す。
     """
+    if not races:
+        return []
+
+    # 集計用
     support: dict[tuple, int] = defaultdict(int)   # (toban, lane) -> 出走回数
-    hits_pair: dict[tuple, int] = defaultdict(int)  # (toban, lane, (a,b)) -> ヒット数
-    hits_win: dict[tuple, int] = defaultdict(int)   # (toban, lane, m)    -> 勝った数
+    hits_pair: dict[tuple, int] = defaultdict(int) # (toban, lane, (a,b)) -> ヒット数
+    hits_win: dict[tuple, int] = defaultdict(int)  # (toban, lane, m)    -> 勝った数
 
     # 母比率算出のための全体集計
     global_pair: dict[tuple[int, int], int] = defaultdict(int)
@@ -177,198 +150,71 @@ def _scan_family(races: list[dict], min_support: int) -> tuple[list[dict], dict[
                         hits_pair[(toban, lane, (a, b))] += 1
             hits_win[(toban, lane, top1)] += 1
 
-    if total_races == 0:
-        return [], toban_name
-
     # 母比率
     base_pair = {ab: cnt / total_races for ab, cnt in global_pair.items()}
     base_win = {m: cnt / total_races for m, cnt in global_win.items()}
 
-    candidates: list[dict] = []
+    signs: list[dict] = []
 
-    # top3_pair（support>=min_support の全仮説）
+    # top3_pair
     for (toban, lane, ab), hits in hits_pair.items():
         sup = support[(toban, lane)]
         if sup < min_support:
             continue
         conf = hits / sup
+        if conf < min_confidence:
+            continue
         base = base_pair.get(ab, 1e-9)
         lift = conf / base if base > 0 else float("inf")
+        if lift < min_lift:
+            continue
         p_val = binom_sf(hits, sup, base)
-        candidates.append({
+        if p_val >= max_p_value:
+            continue
+        signs.append({
             "toban": toban,
+            "racer_name": toban_name.get(toban, ""),
             "cond_lane": lane,
             "target_pair": f"{ab[0]}-{ab[1]}",
             "target_kind": "top3_pair",
             "support": sup,
             "hits": hits,
-            "confidence": conf,
-            "lift": lift,
-            "p_value": p_val,
+            "confidence": round(conf, 4),
+            "lift": round(lift, 3),
+            "p_value": round(p_val, 5),
         })
 
-    # win（support>=min_support の全仮説）
+    # win
     for (toban, lane, m), hits in hits_win.items():
         sup = support[(toban, lane)]
         if sup < min_support:
             continue
         conf = hits / sup
+        if conf < min_confidence:
+            continue
         base = base_win.get(m, 1e-9)
         lift = conf / base if base > 0 else float("inf")
+        if lift < min_lift:
+            continue
         p_val = binom_sf(hits, sup, base)
-        candidates.append({
+        if p_val >= max_p_value:
+            continue
+        signs.append({
             "toban": toban,
+            "racer_name": toban_name.get(toban, ""),
             "cond_lane": lane,
             "target_pair": str(m),
             "target_kind": "win",
             "support": sup,
             "hits": hits,
-            "confidence": conf,
-            "lift": lift,
-            "p_value": p_val,
-        })
-
-    return candidates, toban_name
-
-
-def mine_signs(races: list[dict], *,
-               min_support: int = 10,
-               min_confidence: float = 0.80,
-               min_lift: float = 1.5,
-               max_p_value: float = 0.05,
-               max_q: float = 0.05) -> list[dict]:
-    """
-    全レースを1パスで走査し、多重比較補正(BH-FDR)後のサインを抽出して返す。
-
-    検定する仮説のファミリ全体（support>=min_support を満たす全
-    (toban,lane,pair) と (toban,lane,m)）について p値を出し、Benjamini-Hochberg
-    FDR で q値を計算。採用条件は「conf>=min_confidence かつ lift>=min_lift
-    かつ q_value < max_q」。各サイン dict には q_value を付与する。
-
-    後方互換: 既存引数 max_p_value は維持（補正前の参考フィルタとして併用）。
-    返り値は従来通りサインの list。
-    """
-    if not races:
-        return []
-
-    candidates, toban_name = _scan_family(races, min_support)
-    if not candidates:
-        return []
-
-    # ファミリ全体に BH-FDR を適用して q_value を付与
-    qvals = bh_fdr([c["p_value"] for c in candidates])
-    for c, q in zip(candidates, qvals):
-        c["q_value"] = q
-
-    signs: list[dict] = []
-    for c in candidates:
-        if c["confidence"] < min_confidence:
-            continue
-        if c["lift"] < min_lift:
-            continue
-        # 後方互換: 補正前 p値フィルタも併用（既定 0.05）
-        if c["p_value"] >= max_p_value:
-            continue
-        # 多重比較補正後の採用判定
-        if c["q_value"] >= max_q:
-            continue
-        signs.append({
-            "toban": c["toban"],
-            "racer_name": toban_name.get(c["toban"], ""),
-            "cond_lane": c["cond_lane"],
-            "target_pair": c["target_pair"],
-            "target_kind": c["target_kind"],
-            "support": c["support"],
-            "hits": c["hits"],
-            "confidence": round(c["confidence"], 4),
-            "lift": round(c["lift"], 3),
-            "p_value": round(c["p_value"], 5),
-            "q_value": round(c["q_value"], 5),
+            "confidence": round(conf, 4),
+            "lift": round(lift, 3),
+            "p_value": round(p_val, 5),
         })
 
     # ソート: confidence DESC, support DESC
     signs.sort(key=lambda s: (-s["confidence"], -s["support"]))
     return signs
-
-
-def placebo_eval(races: list[dict], *,
-                 min_support: int = 10,
-                 min_confidence: float = 0.80,
-                 min_lift: float = 1.5,
-                 max_q: float = 0.05,
-                 n_iter: int = 200,
-                 seed: int = 20260528) -> dict:
-    """
-    プラセボ（並べ替え）検定。
-
-    finish結果（各レースの着順）を「選手↔結果」の対応が壊れるようレース間で
-    シャッフルし、mine_signs 相当（同じ補正・採用条件）を n_iter 回反復して、
-    帰無分布での採用サイン数を集計する。エントリ（誰が何号艇か）は固定し、
-    付け替えるのは finish のみ。これで LHS↔RHS の連関を断つ。
-
-    returns: {
-        "observed":   実測の採用サイン数,
-        "null_mean":  帰無分布の平均採用数,
-        "null_p95":   帰無分布の95パーセンタイル,
-        "null_max":   帰無分布の最大,
-        "empirical_p":帰無で observed 以上が出る経験的p値,
-        "n_iter":     反復回数,
-    }
-    """
-    if not races:
-        return {"observed": 0, "null_mean": 0.0, "null_p95": 0,
-                "null_max": 0, "empirical_p": 1.0, "n_iter": 0}
-
-    # 実測の採用サイン数
-    observed = len(mine_signs(
-        races, min_support=min_support, min_confidence=min_confidence,
-        min_lift=min_lift, max_q=max_q))
-
-    # 有効なレース（top3が3艇確定）の finish だけを抜き出してシャッフル対象にする
-    valid_idx = []
-    for i, race in enumerate(races):
-        top3 = {f[1] for f in race["finish"][:3]}
-        top1 = race["finish"][0][1] if race["finish"] else None
-        if len(top3) >= 3 and top1 is not None:
-            valid_idx.append(i)
-
-    rng = random.Random(seed)
-    null_counts: list[int] = []
-    finishes = [races[i]["finish"] for i in valid_idx]
-
-    for _ in range(n_iter):
-        perm = finishes[:]
-        rng.shuffle(perm)
-        # finish を付け替えた仮想レース集合（entries は固定）
-        shuffled = []
-        for j, i in enumerate(valid_idx):
-            r = races[i]
-            shuffled.append({
-                "date": r.get("date"), "jcd": r.get("jcd"), "rno": r.get("rno"),
-                "entries": r["entries"],
-                "finish": perm[j],
-            })
-        n_sel = len(mine_signs(
-            shuffled, min_support=min_support, min_confidence=min_confidence,
-            min_lift=min_lift, max_q=max_q))
-        null_counts.append(n_sel)
-
-    null_counts.sort()
-    n = len(null_counts)
-    null_mean = sum(null_counts) / n if n else 0.0
-    null_p95 = null_counts[min(int(0.95 * n), n - 1)] if n else 0
-    null_max = null_counts[-1] if n else 0
-    ge = sum(1 for x in null_counts if x >= observed)
-    empirical_p = (ge + 1) / (n + 1) if n else 1.0
-
-    return {
-        "observed": observed,
-        "null_mean": round(null_mean, 3),
-        "null_p95": null_p95,
-        "null_max": null_max,
-        "empirical_p": round(empirical_p, 4),
-        "n_iter": n_iter,
-    }
 
 
 def save_signs(conn, signs: list[dict]) -> int:
@@ -378,12 +224,12 @@ def save_signs(conn, signs: list[dict]) -> int:
     for s in signs:
         conn.execute("""
             INSERT INTO signs(toban, racer_name, cond_lane, target_pair, target_kind,
-                support, hits, confidence, lift, p_value, q_value, discovered_at)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                support, hits, confidence, lift, p_value, discovered_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (s["toban"], s["racer_name"], s["cond_lane"],
               s["target_pair"], s["target_kind"],
               s["support"], s["hits"], s["confidence"],
-              s["lift"], s["p_value"], s.get("q_value"), now))
+              s["lift"], s["p_value"], now))
     conn.commit()
     return len(signs)
 
@@ -593,7 +439,7 @@ if __name__ == "__main__":
             print(f"  {s['racer_name']}({s['toban']})@{s['cond_lane']}号艇 → "
                   f"{s['target_kind']}={s['target_pair']}  "
                   f"{s['hits']}/{s['support']}={s['confidence']:.0%}  "
-                  f"lift={s['lift']}  p={s['p_value']}  q={s.get('q_value')}")
+                  f"lift={s['lift']}  p={s['p_value']}")
         if "--save" in sys.argv:
             n = save_signs(conn, signs)
             print(f"DBに{n}件保存しました")
