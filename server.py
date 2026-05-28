@@ -35,7 +35,7 @@ import miner
 import backtest
 import saver
 
-APP_VERSION = "1.8"
+APP_VERSION = "1.9"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -128,6 +128,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_signs(q)
             if path == "/api/sign_detail":
                 return self._api_sign_detail(q)
+            if path == "/api/racer_search":
+                return self._api_racer_search(q)
             if path == "/api/integrity":
                 return self._api_integrity()
             if path == "/api/export":
@@ -286,6 +288,26 @@ class Handler(BaseHTTPRequestHandler):
             "hits": sum(1 for i in instances if i["hit"]),
             "instances": instances,
         })
+
+    def _api_racer_search(self, q):
+        """注目選手の大捜索: 候補サイン一覧 + 各候補の事例(3連単配当付き)を返す。"""
+        toban = (q.get("toban") or [""])[0]
+        if not toban:
+            return _json_response(self, 400, {"error": "toban required"})
+        min_support = int((q.get("min_support") or ["3"])[0])
+        min_confidence = float((q.get("min_confidence") or ["0.6"])[0])
+        db.init_db()
+        with db.get_conn() as conn:
+            res = miner.racer_search(conn, toban,
+                                     min_support=min_support,
+                                     min_confidence=min_confidence)
+            # 各候補に事例を付与（既存 sign_instances を再利用 → 3連単配当を含む）
+            for c in res["candidates"]:
+                instances = miner.sign_instances(
+                    conn, c["toban"], c["cond_lane"],
+                    c["target_pair"], c["target_kind"])
+                c["instances"] = instances
+        return _json_response(self, 200, res)
 
     def _api_integrity(self):
         db.init_db()

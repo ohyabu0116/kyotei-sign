@@ -143,7 +143,7 @@ pre.log {
 <body>
 
 <header>
-  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v1.8</span></h1>
+  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v1.9</span></h1>
   <div class="stats" id="stats">
     <div>レース <b id="s-races">-</b></div>
     <div>結果 <b id="s-results">-</b></div>
@@ -155,6 +155,7 @@ pre.log {
 
 <nav class="tabs">
   <button data-tab="today" class="active">今日のレース</button>
+  <button data-tab="racers">注目選手</button>
   <button data-tab="signs">サイン一覧</button>
   <button data-tab="race">レース詳細</button>
   <button data-tab="collect">データ収集</button>
@@ -177,6 +178,20 @@ pre.log {
       </div>
     </div>
     <div id="today-list" class="race-grid"></div>
+  </div>
+</section>
+
+<!-- 注目選手 -->
+<section id="tab-racers">
+  <div class="card">
+    <h2>注目選手 サイン大捜索</h2>
+    <p class="muted">個人はデータが少ないので緩い閾値（発火≧3回・的中率≧60%）で候補を広く洗い出します。
+      条件コース別に「どの艇が1着になりやすいか／どの艇ペアが3着以内に来やすいか」を表示。行をタップで事例（3連単配当付き）。</p>
+    <div class="flex" style="margin-bottom:12px">
+      <button class="primary" onclick="loadRacer('5156')">坂野さくら (5156)</button>
+      <button class="primary" onclick="loadRacer('5310')">土屋蘭 (5310)</button>
+    </div>
+    <div id="racer-result"></div>
   </div>
 </section>
 
@@ -469,6 +484,70 @@ function formatTarget(s) {
     return `<span class="lane lane-${a}">${a}</span>+<span class="lane lane-${b}">${b}</span>`;
   }
   return `<span class="lane lane-${s.target_pair}">${s.target_pair}</span>`;
+}
+
+// 注目選手 大捜索
+async function loadRacer(toban) {
+  const wrap = document.getElementById('racer-result');
+  wrap.innerHTML = '<p class="muted">読み込み中...</p>';
+  try {
+    const d = await api('/api/racer_search?toban=' + encodeURIComponent(toban));
+    const lanes = Object.entries(d.lane_counts || {})
+      .map(([l, n]) => `<span class="lane lane-${l}">${l}</span>${n}走`).join(' ');
+    let html = `<div style="margin-bottom:8px"><b style="font-size:15px">${d.racer_name||''}</b>
+      <span class="muted">(${d.toban})</span>
+      <span class="muted"> 計${d.total_runs}走</span></div>`;
+    html += `<div class="muted" style="margin-bottom:10px">コース別出走数: ${lanes||'-'}</div>`;
+    if (!d.candidates || !d.candidates.length) {
+      html += '<p class="muted">候補サインが見つかりませんでした（データが少ない可能性）。</p>';
+      wrap.innerHTML = html;
+      return;
+    }
+    html += `<div class="muted" style="margin-bottom:8px">候補 ${d.candidates.length} 件（行をタップで事例を表示）。データは部分的です。</div>`;
+    html += '<table><thead><tr><th></th><th>条件コース</th><th>結果</th><th>種別</th><th>発火</th><th>的中</th><th>的中率</th><th>リフト</th></tr></thead><tbody>';
+    d.candidates.forEach((c, i) => {
+      html += `<tr style="cursor:pointer" onclick="toggleRacerDetail(${i})">
+        <td class="muted">▶</td>
+        <td><span class="lane lane-${c.cond_lane}">${c.cond_lane}</span></td>
+        <td>${formatTarget(c)}</td>
+        <td>${c.target_kind==='top3_pair'?'3着以内':'1着'}</td>
+        <td>${c.support}</td>
+        <td>${c.hits}</td>
+        <td><b style="color:var(--good)">${(c.confidence*100).toFixed(1)}%</b></td>
+        <td style="color:var(--warn)">${c.lift?.toFixed(2)}</td>
+      </tr>
+      <tr id="rd-${i}" style="display:none"><td colspan="8" style="background:var(--bg)"><div id="rd-body-${i}"></div></td></tr>`;
+    });
+    html += '</tbody></table>';
+    window._racerCands = d.candidates;
+    wrap.innerHTML = html;
+  } catch (e) {
+    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
+  }
+}
+function toggleRacerDetail(i) {
+  const row = document.getElementById('rd-' + i);
+  const body = document.getElementById('rd-body-' + i);
+  if (row.style.display === 'none') {
+    row.style.display = '';
+    const c = window._racerCands[i];
+    const hits = (c.instances||[]).filter(x => x.hit).length;
+    let h = `<div style="margin:8px 0"><b>${c.racer_name}が${c.cond_lane}号艇に乗ったレース ${(c.instances||[]).length}件中 ${hits}件的中</b></div>`;
+    h += '<table style="font-size:12px"><thead><tr><th>判定</th><th>日付</th><th>競艇場</th><th>R</th><th>着順(上位3)</th><th>3連単配当</th></tr></thead><tbody>';
+    for (const ins of (c.instances||[])) {
+      const fin = ins.finish.map(f => f[1]).join('-');
+      const mark = ins.hit ? '<span style="color:var(--good)">◎的中</span>' : '<span style="color:var(--bad)">✗外</span>';
+      const dt = `${ins.date.slice(0,4)}/${ins.date.slice(4,6)}/${ins.date.slice(6)}`;
+      const pay3t = ins.payout_3t_yen
+        ? `<span class="muted">${ins.payout_3t||''}</span> <b>¥${Number(ins.payout_3t_yen).toLocaleString()}</b>`
+        : '<span class="muted">-</span>';
+      h += `<tr><td>${mark}</td><td>${dt}</td><td><b>${ins.venue}</b></td><td>${ins.rno}R</td><td>${fin}</td><td>${pay3t}</td></tr>`;
+    }
+    h += '</tbody></table>';
+    body.innerHTML = h;
+  } else {
+    row.style.display = 'none';
+  }
 }
 
 // レース詳細

@@ -275,6 +275,140 @@ def sign_instances(conn, toban: str, cond_lane: int,
     return out
 
 
+def racer_search(conn, toban: str, *,
+                 min_support: int = 3,
+                 min_confidence: float = 0.6) -> dict:
+    """
+    注目選手「大捜索」: ある選手(toban)について、乗った各コース(lane 1-6)ごとに
+      - どの艇が1着になりやすいか            (kind='win')
+      - どの艇ペアが両方3着以内に来やすいか  (kind='top3_pair')
+    を緩い閾値で網羅的に洗い出す。
+
+    個人はデータが少ないので閾値は緩め(support>=3, confidence>=0.6)。
+    母比率(lift算出用)は「女子戦・結果ありの全レース」から求める。
+
+    返り値:
+      {
+        "toban": str, "racer_name": str, "total_runs": int,
+        "lane_counts": {lane: 出走数},
+        "candidates": [ {toban, racer_name, cond_lane, target_pair, target_kind,
+                         support, hits, confidence, lift}, ... ]   # confidence DESC
+      }
+    """
+    # ── 母比率: 女子戦・結果ありの全レースから ─────────────────────
+    global_pair: dict[tuple[int, int], int] = defaultdict(int)
+    global_win: dict[int, int] = defaultdict(int)
+    total_races = 0
+    rows = conn.execute("""
+        SELECT rr.finish_json
+        FROM races r
+        JOIN race_results rr ON r.date=rr.date AND r.jcd=rr.jcd AND r.rno=rr.rno
+        WHERE r.has_card=1 AND r.has_result=1 AND r.is_ladies=1
+    """).fetchall()
+    for row in rows:
+        fin = json.loads(row["finish_json"])
+        top3 = {f[1] for f in fin[:3]}
+        top1 = fin[0][1] if fin else None
+        if len(top3) < 3 or top1 is None:
+            continue
+        total_races += 1
+        for a in range(1, 7):
+            for b in range(a + 1, 7):
+                if a in top3 and b in top3:
+                    global_pair[(a, b)] += 1
+        global_win[top1] += 1
+    base_pair = {ab: cnt / total_races for ab, cnt in global_pair.items()} if total_races else {}
+    base_win = {m: cnt / total_races for m, cnt in global_win.items()} if total_races else {}
+
+    # ── この選手のレースを取得 ─────────────────────────────────────
+    erows = conn.execute("""
+        SELECT e.date, e.jcd, e.rno, e.lane, e.name, rr.finish_json
+        FROM race_entries e
+        JOIN races r ON e.date=r.date AND e.jcd=r.jcd AND e.rno=r.rno
+        JOIN race_results rr ON e.date=rr.date AND e.jcd=rr.jcd AND e.rno=rr.rno
+        WHERE e.toban=? AND r.is_ladies=1 AND r.has_card=1 AND r.has_result=1
+        ORDER BY e.date, e.jcd, e.rno
+    """, (toban,)).fetchall()
+
+    racer_name = erows[0]["name"] if erows else ""
+    lane_counts: dict[int, int] = defaultdict(int)
+    support: dict[int, int] = defaultdict(int)              # lane -> 出走数
+    hits_pair: dict[tuple[int, tuple[int, int]], int] = defaultdict(int)  # (lane,(a,b)) -> ヒット
+    hits_win: dict[tuple[int, int], int] = defaultdict(int)               # (lane,m) -> ヒット
+
+    for row in erows:
+        fin = json.loads(row["finish_json"])
+        top3 = {f[1] for f in fin[:3]}
+        top1 = fin[0][1] if fin else None
+        if len(top3) < 3 or top1 is None:
+            continue
+        lane = row["lane"]
+        lane_counts[lane] += 1
+        support[lane] += 1
+        for a in range(1, 7):
+            for b in range(a + 1, 7):
+                if a in top3 and b in top3:
+                    hits_pair[(lane, (a, b))] += 1
+        hits_win[(lane, top1)] += 1
+
+    candidates: list[dict] = []
+
+    # top3_pair 候補
+    for (lane, ab), hits in hits_pair.items():
+        sup = support[lane]
+        if sup < min_support:
+            continue
+        conf = hits / sup
+        if conf < min_confidence:
+            continue
+        base = base_pair.get(ab, 1e-9)
+        lift = conf / base if base > 0 else float("inf")
+        candidates.append({
+            "toban": toban,
+            "racer_name": racer_name,
+            "cond_lane": lane,
+            "target_pair": f"{ab[0]}-{ab[1]}",
+            "target_kind": "top3_pair",
+            "support": sup,
+            "hits": hits,
+            "confidence": round(conf, 4),
+            "lift": round(lift, 3),
+        })
+
+    # win 候補
+    for (lane, m), hits in hits_win.items():
+        sup = support[lane]
+        if sup < min_support:
+            continue
+        conf = hits / sup
+        if conf < min_confidence:
+            continue
+        base = base_win.get(m, 1e-9)
+        lift = conf / base if base > 0 else float("inf")
+        candidates.append({
+            "toban": toban,
+            "racer_name": racer_name,
+            "cond_lane": lane,
+            "target_pair": str(m),
+            "target_kind": "win",
+            "support": sup,
+            "hits": hits,
+            "confidence": round(conf, 4),
+            "lift": round(lift, 3),
+        })
+
+    # ソート: confidence DESC, lift DESC, support DESC
+    candidates.sort(key=lambda c: (-c["confidence"], -c["lift"], -c["support"]))
+
+    return {
+        "toban": toban,
+        "racer_name": racer_name,
+        "total_runs": sum(lane_counts.values()),
+        "lane_counts": {k: lane_counts[k] for k in sorted(lane_counts)},
+        "candidates": candidates,
+    }
+
+
 def find_fires_for_card(conn, card_entries: list[tuple[int, str]]) -> list[dict]:
     """
     出走表 entries=[(lane, toban), ...] に対して発火するサインを抽出。
