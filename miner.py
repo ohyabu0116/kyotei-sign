@@ -242,7 +242,8 @@ def sign_instances(conn, toban: str, cond_lane: int,
     各事例: { date, venue, jcd, rno, finish(着順上位3艇), hit(的中したか) }
     """
     rows = conn.execute("""
-        SELECT e.date, e.jcd, e.rno, r.venue, r.title, rr.finish_json
+        SELECT e.date, e.jcd, e.rno, r.venue, r.title, rr.finish_json,
+               rr.payout_3t, rr.payout_3t_yen
         FROM race_entries e
         JOIN races r ON e.date=r.date AND e.jcd=r.jcd AND e.rno=r.rno
         JOIN race_results rr ON e.date=rr.date AND e.jcd=rr.jcd AND e.rno=rr.rno
@@ -268,6 +269,8 @@ def sign_instances(conn, toban: str, cond_lane: int,
             "title": row["title"],
             "finish": [list(f) for f in fin[:3]],   # [[着,艇,登番,名前],...]
             "hit": hit,
+            "payout_3t": row["payout_3t"],           # 3連単の組（例 "1-2-3"）
+            "payout_3t_yen": row["payout_3t_yen"],   # 3連単配当（円）
         })
     return out
 

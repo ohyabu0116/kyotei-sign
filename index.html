@@ -143,7 +143,7 @@ pre.log {
 <body>
 
 <header>
-  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v1.7</span></h1>
+  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v1.8</span></h1>
   <div class="stats" id="stats">
     <div>レース <b id="s-races">-</b></div>
     <div>結果 <b id="s-results">-</b></div>
@@ -444,12 +444,15 @@ async function toggleSignDetail(i) {
     try {
       const d = await api(`/api/sign_detail?toban=${encodeURIComponent(s.toban)}&lane=${s.cond_lane}&target=${encodeURIComponent(s.target_pair)}&kind=${s.target_kind}`);
       let h = `<div style="margin:8px 0"><b>${s.racer_name}が${s.cond_lane}号艇に乗ったレース ${d.count}件中 ${d.hits}件的中</b></div>`;
-      h += '<table style="font-size:12px"><thead><tr><th>判定</th><th>日付</th><th>競艇場</th><th>R</th><th>着順(上位3)</th></tr></thead><tbody>';
+      h += '<table style="font-size:12px"><thead><tr><th>判定</th><th>日付</th><th>競艇場</th><th>R</th><th>着順(上位3)</th><th>3連単配当</th></tr></thead><tbody>';
       for (const ins of d.instances) {
         const fin = ins.finish.map(f => f[1]).join('-');
         const mark = ins.hit ? '<span style="color:var(--good)">◎的中</span>' : '<span style="color:var(--bad)">✗外</span>';
         const dt = `${ins.date.slice(0,4)}/${ins.date.slice(4,6)}/${ins.date.slice(6)}`;
-        h += `<tr><td>${mark}</td><td>${dt}</td><td><b>${ins.venue}</b></td><td>${ins.rno}R</td><td>${fin}</td></tr>`;
+        const pay3t = ins.payout_3t_yen
+          ? `<span class="muted">${ins.payout_3t||''}</span> <b>¥${Number(ins.payout_3t_yen).toLocaleString()}</b>`
+          : '<span class="muted">-</span>';
+        h += `<tr><td>${mark}</td><td>${dt}</td><td><b>${ins.venue}</b></td><td>${ins.rno}R</td><td>${fin}</td><td>${pay3t}</td></tr>`;
       }
       h += '</tbody></table>';
       body.innerHTML = h;
