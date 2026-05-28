@@ -53,12 +53,25 @@ def has_result_in_db(conn, date: str, jcd: str, rno: int) -> bool:
     return bool(row and row["has_result"]) if row else False
 
 
+def _retry(fn, *, tries: int = 3, wait: float = 5.0):
+    """ネットワークエラー時にリトライ。全部失敗したら最後の例外を投げる。"""
+    last = None
+    for i in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            time.sleep(wait)
+    raise last
+
+
 def collect_day(date: str, *, force: bool = False,
                 progress: Optional[Callable[[str], None]] = None) -> dict:
     """1日分の女子戦レースを収集"""
     progress = progress or (lambda s: print(s, flush=True))
     progress(f"[{date}] index取得...")
-    venues = scraper.fetch_daily_venues(date)
+    # index取得はリトライ付き（タイムアウトで全体が死なないように）
+    venues = _retry(lambda: scraper.fetch_daily_venues(date))
     ladies_venues = [v for v in venues if v["is_ladies"]]
     progress(f"[{date}] 女子戦会場: {len(ladies_venues)} / 全会場 {len(venues)}")
 
@@ -115,10 +128,15 @@ def collect_range(start: str, end: str, *, force: bool = False, reverse: bool = 
     grand: dict = {"days": 0, "cards": 0, "results": 0, "errors": 0, "skipped": 0,
                    "started_at": datetime.datetime.now().isoformat()}
     for d in daterange(start, end, reverse=reverse):
-        s = collect_day(d, force=force, progress=progress)
-        grand["days"] += 1
-        for k in ("cards", "results", "errors", "skipped"):
-            grand[k] += s[k]
+        try:
+            s = collect_day(d, force=force, progress=progress)
+            grand["days"] += 1
+            for k in ("cards", "results", "errors", "skipped"):
+                grand[k] += s[k]
+        except Exception as e:
+            # 1日分が失敗しても全体は止めない（次の日へ）
+            grand["errors"] += 1
+            progress(f"[{d}] 日次収集エラー（スキップ）: {e}")
     grand["finished_at"] = datetime.datetime.now().isoformat()
     return grand
 
