@@ -143,7 +143,7 @@ pre.log {
 <body>
 
 <header>
-  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v1.6</span></h1>
+  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v1.7</span></h1>
   <div class="stats" id="stats">
     <div>レース <b id="s-races">-</b></div>
     <div>結果 <b id="s-results">-</b></div>
@@ -412,11 +412,12 @@ async function loadSigns() {
       wrap.innerHTML = '<p class="muted">サインがありません。<br>「マイニング」タブで実行してください。</p>';
       return;
     }
-    let html = '<table><thead><tr><th>選手</th><th>登番</th><th>条件</th><th>結果</th><th>種別</th><th>発火</th><th>的中</th><th>的中率</th><th>リフト</th><th>p値</th></tr></thead><tbody>';
-    for (const s of d.signs) {
-      html += `<tr>
-        <td>${s.racer_name||''}</td>
-        <td class="muted">${s.toban}</td>
+    let html = `<div class="muted" style="margin-bottom:8px">${d.count}件（行をタップで事例を表示）</div>`;
+    html += '<table><thead><tr><th></th><th>選手</th><th>条件</th><th>結果</th><th>種別</th><th>発火</th><th>的中</th><th>的中率</th><th>リフト</th></tr></thead><tbody>';
+    d.signs.forEach((s, i) => {
+      html += `<tr style="cursor:pointer" onclick="toggleSignDetail(${i})">
+        <td class="muted">▶</td>
+        <td><b>${s.racer_name||''}</b><br><span class="muted" style="font-size:11px">${s.toban}</span></td>
         <td><span class="lane lane-${s.cond_lane}">${s.cond_lane}</span></td>
         <td>${formatTarget(s)}</td>
         <td>${s.target_kind==='top3_pair'?'3着以内':'1着'}</td>
@@ -424,13 +425,39 @@ async function loadSigns() {
         <td>${s.hits}</td>
         <td><b style="color:var(--good)">${(s.confidence*100).toFixed(1)}%</b></td>
         <td style="color:var(--warn)">${s.lift?.toFixed(2)}</td>
-        <td class="muted">${s.p_value?.toFixed(4)}</td>
-      </tr>`;
-    }
+      </tr>
+      <tr id="sd-${i}" style="display:none"><td colspan="9" style="background:var(--bg)"><div id="sd-body-${i}" class="muted">読み込み中...</div></td></tr>`;
+    });
     html += '</tbody></table>';
-    wrap.innerHTML = `<div class="muted" style="margin-bottom:8px">${d.count}件</div>` + html;
+    window._signs = d.signs;
+    wrap.innerHTML = html;
   } catch (e) {
     wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
+  }
+}
+async function toggleSignDetail(i) {
+  const row = document.getElementById('sd-' + i);
+  const body = document.getElementById('sd-body-' + i);
+  if (row.style.display === 'none') {
+    row.style.display = '';
+    const s = window._signs[i];
+    try {
+      const d = await api(`/api/sign_detail?toban=${encodeURIComponent(s.toban)}&lane=${s.cond_lane}&target=${encodeURIComponent(s.target_pair)}&kind=${s.target_kind}`);
+      let h = `<div style="margin:8px 0"><b>${s.racer_name}が${s.cond_lane}号艇に乗ったレース ${d.count}件中 ${d.hits}件的中</b></div>`;
+      h += '<table style="font-size:12px"><thead><tr><th>判定</th><th>日付</th><th>競艇場</th><th>R</th><th>着順(上位3)</th></tr></thead><tbody>';
+      for (const ins of d.instances) {
+        const fin = ins.finish.map(f => f[1]).join('-');
+        const mark = ins.hit ? '<span style="color:var(--good)">◎的中</span>' : '<span style="color:var(--bad)">✗外</span>';
+        const dt = `${ins.date.slice(0,4)}/${ins.date.slice(4,6)}/${ins.date.slice(6)}`;
+        h += `<tr><td>${mark}</td><td>${dt}</td><td><b>${ins.venue}</b></td><td>${ins.rno}R</td><td>${fin}</td></tr>`;
+      }
+      h += '</tbody></table>';
+      body.innerHTML = h;
+    } catch (e) {
+      body.innerHTML = `<span class="error">${e.message}</span>`;
+    }
+  } else {
+    row.style.display = 'none';
   }
 }
 function formatTarget(s) {

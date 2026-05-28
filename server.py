@@ -35,7 +35,7 @@ import miner
 import backtest
 import saver
 
-APP_VERSION = "1.6"
+APP_VERSION = "1.7"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -126,6 +126,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_race(q)
             if path == "/api/signs":
                 return self._api_signs(q)
+            if path == "/api/sign_detail":
+                return self._api_sign_detail(q)
             if path == "/api/integrity":
                 return self._api_integrity()
             if path == "/api/export":
@@ -266,6 +268,23 @@ class Handler(BaseHTTPRequestHandler):
         return _json_response(self, 200, {
             "count": len(rows),
             "signs": [dict(r) for r in rows],
+        })
+
+    def _api_sign_detail(self, q):
+        toban = (q.get("toban") or [""])[0]
+        lane = int((q.get("lane") or ["0"])[0])
+        target = (q.get("target") or [""])[0]
+        kind = (q.get("kind") or [""])[0]
+        if not (toban and lane and target and kind):
+            return _json_response(self, 400, {"error": "toban, lane, target, kind required"})
+        db.init_db()
+        with db.get_conn() as conn:
+            instances = miner.sign_instances(conn, toban, lane, target, kind)
+        return _json_response(self, 200, {
+            "toban": toban, "cond_lane": lane, "target": target, "kind": kind,
+            "count": len(instances),
+            "hits": sum(1 for i in instances if i["hit"]),
+            "instances": instances,
         })
 
     def _api_integrity(self):

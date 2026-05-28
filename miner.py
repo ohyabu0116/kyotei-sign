@@ -235,6 +235,43 @@ def save_signs(conn, signs: list[dict]) -> int:
 
 
 # ── 予想 ─────────────────────────────────────────────────────────
+def sign_instances(conn, toban: str, cond_lane: int,
+                   target_pair: str, target_kind: str) -> list[dict]:
+    """
+    あるサインが「いつ・どこの競艇場・何レースで」観測されたかの事例一覧を返す。
+    各事例: { date, venue, jcd, rno, finish(着順上位3艇), hit(的中したか) }
+    """
+    rows = conn.execute("""
+        SELECT e.date, e.jcd, e.rno, r.venue, r.title, rr.finish_json
+        FROM race_entries e
+        JOIN races r ON e.date=r.date AND e.jcd=r.jcd AND e.rno=r.rno
+        JOIN race_results rr ON e.date=rr.date AND e.jcd=rr.jcd AND e.rno=rr.rno
+        WHERE e.toban=? AND e.lane=? AND r.is_ladies=1
+        ORDER BY e.date, e.jcd, e.rno
+    """, (toban, cond_lane)).fetchall()
+
+    out = []
+    for row in rows:
+        fin = json.loads(row["finish_json"])
+        top3 = {f[1] for f in fin[:3]}
+        top1 = fin[0][1] if fin else None
+        if target_kind == "win":
+            hit = (top1 == int(target_pair))
+        else:
+            a, b = (int(x) for x in target_pair.split("-"))
+            hit = (a in top3 and b in top3)
+        out.append({
+            "date": row["date"],
+            "venue": row["venue"],
+            "jcd": row["jcd"],
+            "rno": row["rno"],
+            "title": row["title"],
+            "finish": [list(f) for f in fin[:3]],   # [[着,艇,登番,名前],...]
+            "hit": hit,
+        })
+    return out
+
+
 def find_fires_for_card(conn, card_entries: list[tuple[int, str]]) -> list[dict]:
     """
     出走表 entries=[(lane, toban), ...] に対して発火するサインを抽出。
