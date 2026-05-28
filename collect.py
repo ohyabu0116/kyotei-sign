@@ -94,6 +94,12 @@ def collect_day(date: str, *, force: bool = False,
                 except Exception as e:
                     stats["errors"] += 1
                     progress(f"  [{date} {v['venue']} {rno}R] result ERR: {e}")
+            # この会場は女子戦なので、収集した全レースを is_ladies=1 に確定
+            # （タイトルがＶＳ等の略称でキーワード判定を漏れても確実に女子戦扱い）
+            conn.execute(
+                "UPDATE races SET is_ladies=1 WHERE date=? AND jcd=?",
+                (date, jcd),
+            )
         conn.commit()
     return stats
 
