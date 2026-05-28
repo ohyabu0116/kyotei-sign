@@ -62,6 +62,17 @@ def _gh_get_sha(token: str) -> str | None:
         raise
 
 
+def _remote_race_count() -> int:
+    """data ブランチの data.json に入っているレース数を取得（無ければ0）"""
+    url = f"https://raw.githubusercontent.com/{GH_REPO}/{GH_BRANCH}/{GH_PATH}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "kyotei-sign-saver"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return len(json.loads(r.read()).get("races", []))
+    except Exception:
+        return 0
+
+
 def commit_to_github(token: str, content: str, message: str) -> bool:
     """GitHub Contents API で data ブランチの data.json を更新/作成"""
     sha = _gh_get_sha(token)
@@ -105,6 +116,12 @@ def save_now(reason: str = "manual") -> dict:
             return {"ok": True, "skipped": True, "reason": "変更なし"}
 
         n_races = len(data["races"])
+        # アンチクロバー: リモートの方がレース数が多い場合は上書きしない
+        # （Mac側の大規模バックフィルを Render の小さいDBが潰さないように）
+        remote = _remote_race_count()
+        if n_races < remote:
+            return {"ok": True, "skipped": True,
+                    "reason": f"リモート({remote})の方が多い→保護", "local": n_races}
         msg = f"Auto-save ({reason}) races={n_races} {time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime())}"
         try:
             commit_to_github(token, content, msg)
