@@ -35,7 +35,7 @@ import miner
 import backtest
 import saver
 
-APP_VERSION = "1.3"
+APP_VERSION = "1.4"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -478,6 +478,52 @@ def _auto_bootstrap():
     threading.Thread(target=_run, daemon=True).start()
 
 
+# ── 定期リフレッシュ（新しい日のレースを自動取得）───────────────
+def _daily_refresh_loop():
+    """
+    一定間隔で直近 REFRESH_DAYS 日分を再収集する。
+    - 新しい開催日の出走表を取得
+    - レース確定後の結果を取得（force=Trueで結果を更新）
+    これで「今日以降のレース」も自動で増えていく。
+    """
+    interval_h = float(os.environ.get("REFRESH_INTERVAL_HOURS", "3"))
+    days = int(os.environ.get("REFRESH_DAYS", "3"))
+    if interval_h <= 0:
+        print("[refresh] 無効 (REFRESH_INTERVAL_HOURS=0)")
+        return
+
+    def _run():
+        print(f"[refresh] 開始: {interval_h}時間ごとに直近{days}日を再収集")
+        # 起動直後は他の処理と被らないよう少し待つ
+        time.sleep(300)
+        while True:
+            if _collect_lock.acquire(blocking=False):
+                jid = "refresh"
+                _active_collect_job["id"] = jid
+                _job_set(jid, status="running", kind="refresh")
+                try:
+                    import collect as collector
+                    today = datetime.date.today()
+                    start = (today - datetime.timedelta(days=days - 1)).strftime("%Y%m%d")
+                    end = today.strftime("%Y%m%d")
+                    print(f"[refresh] 直近{days}日を再収集 ({start}〜{end})")
+                    r = collector.collect_range(start, end, force=True,
+                                                progress=lambda s: print(f"[refresh] {s}"))
+                    print(f"[refresh] 完了: {r}")
+                    _job_set(jid, status="done", result=r)
+                except Exception as e:
+                    import traceback; traceback.print_exc()
+                    _job_set("refresh", status="error", error=str(e))
+                finally:
+                    _active_collect_job["id"] = None
+                    _collect_lock.release()
+            else:
+                print("[refresh] 別ジョブ走行中 → 今回はスキップ")
+            time.sleep(interval_h * 3600)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 # ── 起動 ─────────────────────────────────────────────────────────
 def main():
     db.init_db()
@@ -489,8 +535,10 @@ def main():
     restored = _restore_from_repo()
     if not restored:
         _auto_bootstrap()
-    # サーバー自身による定期GitHub保存（GH_TOKENがあれば有効）
+    # サーバー自身による定期GitHub保存 + dataブランチ同期
     saver.start_autosave_loop()
+    # 新しい日のレースを定期的に自動取得
+    _daily_refresh_loop()
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
         httpd.serve_forever()

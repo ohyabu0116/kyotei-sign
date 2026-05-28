@@ -15,3 +15,7 @@ services:
         value: 3.11.0
       - key: AUTO_INIT_DAYS
         value: "3"
+      - key: REFRESH_INTERVAL_HOURS
+        value: "3"
+      - key: REFRESH_DAYS
+        value: "3"
