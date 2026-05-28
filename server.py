@@ -34,6 +34,7 @@ import db
 import miner
 import backtest
 
+APP_VERSION = "1.0"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -111,7 +112,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/" or path == "/index.html":
                 return self._serve_index()
             if path == "/api/ping":
-                return _json_response(self, 200, {"ok": True, "ts": time.time()})
+                return _json_response(self, 200, {"ok": True, "ts": time.time(), "version": APP_VERSION})
+            if path == "/api/version":
+                return _json_response(self, 200, {"version": APP_VERSION})
             if path == "/api/stats":
                 return self._api_stats()
             if path == "/api/today":
@@ -358,14 +361,17 @@ class Handler(BaseHTTPRequestHandler):
         return _json_response(self, 200, r)
 
 
-# ── 起動時の main ブランチ data.json 復元 ────────────────────────
-DATA_URL = "https://raw.githubusercontent.com/ohyabu0116/kyotei-sign/main/data.json"
+# ── 起動時の data ブランチ data.json 復元 ────────────────────────
+# main ブランチ更新だと Render が自動再デプロイされてしまうので
+# スナップショットは data ブランチに分離している
+DATA_URL = "https://raw.githubusercontent.com/ohyabu0116/kyotei-sign/data/data.json"
+DATA_URL_FALLBACK = "https://raw.githubusercontent.com/ohyabu0116/kyotei-sign/main/data.json"
 
 
 def _restore_from_repo():
     """
-    起動時、DBが空ならリポジトリ直下の data.json から復元する。
-    keirin-sign と同じパターン: 手動で export_data.py を回して push したJSONを取り込む。
+    起動時、DBが空なら data ブランチの data.json から復元する。
+    main にもあるなら fallback として使う。
     """
     try:
         with db.get_conn() as conn:
@@ -377,13 +383,19 @@ def _restore_from_repo():
         print(f"[restore] DB確認失敗: {e}")
 
     import urllib.request
-    try:
-        print(f"[restore] data.json fetch: {DATA_URL}")
-        req = urllib.request.Request(DATA_URL, headers={"User-Agent": "kyotei-sign"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            payload = json.loads(r.read())
-    except Exception as e:
-        print(f"[restore] data.json 未配置 or 取得失敗 ({e}) → bootstrap にフォールバック")
+    payload = None
+    for url in (DATA_URL, DATA_URL_FALLBACK):
+        try:
+            print(f"[restore] data.json fetch: {url}")
+            req = urllib.request.Request(url, headers={"User-Agent": "kyotei-sign"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                payload = json.loads(r.read())
+            print(f"[restore] OK: {url}")
+            break
+        except Exception as e:
+            print(f"[restore] {url} 失敗 ({e})")
+    if payload is None:
+        print(f"[restore] 全URL失敗 → bootstrap にフォールバック")
         return False
 
     counts = {}
