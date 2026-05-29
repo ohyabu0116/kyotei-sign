@@ -35,7 +35,7 @@ import miner
 import backtest
 import saver
 
-APP_VERSION = "2.2"
+APP_VERSION = "2.3"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -124,6 +124,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_day(q)
             if path == "/api/race":
                 return self._api_race(q)
+            if path == "/api/results":
+                return self._api_results(q)
             if path == "/api/signs":
                 return self._api_signs(q)
             if path == "/api/sign_detail":
@@ -253,6 +255,40 @@ class Handler(BaseHTTPRequestHandler):
             "fires": fires,
             "result": dict(result) if result else None,
         })
+
+    def _api_results(self, q):
+        """結果一覧: 指定日の女子戦の結果（着順・決まり手・配当）。日付なしなら直近 limit 件。"""
+        date = (q.get("date") or [""])[0]
+        limit = int((q.get("limit") or ["60"])[0])
+        db.init_db()
+        with db.get_conn() as conn:
+            sql = """SELECT r.date, r.jcd, r.venue, r.rno, rr.finish_json, rr.determinant,
+                            rr.payout_3t, rr.payout_3t_yen, rr.payout_3f, rr.payout_3f_yen
+                     FROM races r JOIN race_results rr
+                       ON r.date=rr.date AND r.jcd=rr.jcd AND r.rno=rr.rno
+                     WHERE r.is_ladies=1"""
+            params: list = []
+            if date:
+                sql += " AND r.date=? ORDER BY r.jcd, r.rno"
+                params.append(date)
+            else:
+                sql += " ORDER BY r.date DESC, r.jcd, r.rno LIMIT ?"
+                params.append(limit)
+            rows = conn.execute(sql, params).fetchall()
+        out = []
+        for r in rows:
+            try:
+                fin = json.loads(r["finish_json"])
+            except Exception:
+                fin = []
+            out.append({
+                "date": r["date"], "jcd": r["jcd"], "venue": r["venue"], "rno": r["rno"],
+                "finish": [[f[0], f[1]] for f in fin[:3]],  # [[着, 艇番], ...]
+                "determinant": r["determinant"],
+                "payout_3t": r["payout_3t"], "payout_3t_yen": r["payout_3t_yen"],
+                "payout_3f": r["payout_3f"], "payout_3f_yen": r["payout_3f_yen"],
+            })
+        return _json_response(self, 200, {"count": len(out), "date": date, "results": out})
 
     def _api_signs(self, q):
         limit = int((q.get("limit") or ["200"])[0])

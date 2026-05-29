@@ -143,7 +143,7 @@ pre.log {
 <body>
 
 <header>
-  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v2.2</span></h1>
+  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v2.3</span></h1>
   <div class="stats" id="stats">
     <div>レース <b id="s-races">-</b></div>
     <div>結果 <b id="s-results">-</b></div>
@@ -155,6 +155,7 @@ pre.log {
 
 <nav class="tabs">
   <button data-tab="today" class="active">今日のレース</button>
+  <button data-tab="results">結果一覧</button>
   <button data-tab="racers">注目選手</button>
   <button data-tab="signs">サイン一覧</button>
   <button data-tab="race">レース詳細</button>
@@ -178,6 +179,19 @@ pre.log {
       </div>
     </div>
     <div id="today-list" class="race-grid"></div>
+  </div>
+</section>
+
+<!-- 結果一覧 -->
+<section id="tab-results">
+  <div class="card">
+    <h2>レース結果一覧</h2>
+    <div class="flex" style="margin-bottom:12px">
+      <label>日付</label><input id="res-date" type="date">
+      <button class="primary" onclick="loadResults()">表示</button>
+      <button class="ghost" onclick="loadResults(true)">最近60件</button>
+    </div>
+    <div id="results-list"></div>
   </div>
 </section>
 
@@ -361,8 +375,42 @@ async function refreshStats() {
     document.getElementById('s-signs').textContent = s.signs;
     if (s.date_range[0]) {
       document.getElementById('s-range').textContent = `${s.date_range[0]}〜${s.date_range[1]}`;
+      // 結果一覧の日付を最新データ日に初期化
+      const mx = s.date_range[1], rd = document.getElementById('res-date');
+      if (mx && rd && !rd.value) rd.value = `${mx.slice(0,4)}-${mx.slice(4,6)}-${mx.slice(6)}`;
     }
   } catch (e) { console.error(e); }
+}
+
+// 結果一覧
+async function loadResults(recent) {
+  const wrap = document.getElementById('results-list');
+  wrap.innerHTML = '<p class="muted">読み込み中...</p>';
+  let path = '/api/results';
+  if (!recent) {
+    const d = ymd_nohyphen(document.getElementById('res-date').value);
+    if (d) path += '?date=' + d;
+  }
+  try {
+    const d = await api(path);
+    if (!d.results.length) {
+      wrap.innerHTML = '<p class="muted">この条件の結果はありません（日付を変えるか「最近60件」を押してください）。</p>';
+      return;
+    }
+    let html = `<div class="muted" style="margin-bottom:8px">${d.count}件</div>`;
+    html += '<table><thead><tr><th>日付</th><th>会場</th><th>R</th><th>1着</th><th>2着</th><th>3着</th><th>決まり手</th><th>3連単</th><th>3連複</th></tr></thead><tbody>';
+    for (const r of d.results) {
+      const cell = (i) => r.finish[i] ? `<span class="lane lane-${r.finish[i][1]}">${r.finish[i][1]}</span>` : '-';
+      const dt = `${r.date.slice(4,6)}/${r.date.slice(6)}`;
+      const t3 = r.payout_3t_yen ? `<span class="muted">${r.payout_3t||''}</span> <b>¥${Number(r.payout_3t_yen).toLocaleString()}</b>` : '-';
+      const f3 = r.payout_3f_yen ? `<span class="muted">${r.payout_3f||''}</span> ¥${Number(r.payout_3f_yen).toLocaleString()}` : '-';
+      html += `<tr><td>${dt}</td><td><b>${r.venue}</b></td><td>${r.rno}R</td><td>${cell(0)}</td><td>${cell(1)}</td><td>${cell(2)}</td><td>${r.determinant||'-'}</td><td>${t3}</td><td>${f3}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+  } catch (e) {
+    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
+  }
 }
 
 // 今日の表示
