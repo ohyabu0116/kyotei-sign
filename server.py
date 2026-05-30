@@ -10,6 +10,7 @@ Endpoints:
   GET  /api/day?date=         指定日の女子戦
   GET  /api/race?date=&jcd=&rno=   レース詳細（出走表+結果+発火サイン）
   GET  /api/signs             抽出済みサイン一覧
+  GET  /api/watchlist         オカルト/異常値ウォッチリストの生存追跡
   GET  /api/integrity         データ整合性チェック
   POST /api/collect           {start,end} で過去データ収集（バックグラウンドjob）
   GET  /api/job/<id>          ジョブ進捗
@@ -34,8 +35,9 @@ import db
 import miner
 import backtest
 import saver
+import watchlist_eval
 
-APP_VERSION = "2.3"
+APP_VERSION = "2.4"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -126,6 +128,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_race(q)
             if path == "/api/results":
                 return self._api_results(q)
+            if path == "/api/watchlist":
+                return self._api_watchlist()
             if path == "/api/signs":
                 return self._api_signs(q)
             if path == "/api/sign_detail":
@@ -289,6 +293,13 @@ class Handler(BaseHTTPRequestHandler):
                 "payout_3f": r["payout_3f"], "payout_3f_yen": r["payout_3f_yen"],
             })
         return _json_response(self, 200, {"count": len(out), "date": date, "results": out})
+
+    def _api_watchlist(self):
+        """オカルト/異常値ウォッチリスト: 各候補の現在 support/的中率/lift/判定を返す。"""
+        db.init_db()
+        with db.get_conn() as conn:
+            data = watchlist_eval.evaluate(conn)
+        return _json_response(self, 200, data)
 
     def _api_signs(self, q):
         limit = int((q.get("limit") or ["200"])[0])

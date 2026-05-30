@@ -138,6 +138,9 @@ pre.log {
 .error { color: var(--bad); }
 .muted { color: var(--text-dim); }
 .flex { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.wl-alive { color: var(--good); font-weight: 700; }
+.wl-watch { color: var(--warn); font-weight: 700; }
+.wl-dead { color: var(--text-dim); }
 </style>
 </head>
 <body>
@@ -158,6 +161,7 @@ pre.log {
   <button data-tab="results">結果一覧</button>
   <button data-tab="racers">注目選手</button>
   <button data-tab="signs">サイン一覧</button>
+  <button data-tab="watchlist">ウォッチリスト</button>
   <button data-tab="race">レース詳細</button>
   <button data-tab="collect">データ収集</button>
   <button data-tab="mine">マイニング</button>
@@ -226,6 +230,19 @@ pre.log {
       <button class="primary" onclick="loadSigns()">読み込み</button>
     </div>
     <div id="signs-list"></div>
+  </div>
+</section>
+
+<!-- ウォッチリスト（オカルト/異常値サイン 生存追跡） -->
+<section id="tab-watchlist">
+  <div class="card">
+    <h2>オカルト/異常値サイン 生存追跡</h2>
+    <p class="muted">「この条件が揃うと、なぜかこの2艇が3着以内に来る」という複合サインを登録し、データが増えても生き残るかを追跡します。
+      <b>異常値</b>＝的中率系（生存≥80%）／<b>異常lift</b>＝レアペア倍率系（通常比≥2.0倍で生存）。統計的検証なしの生の共起なので、伸びても淘汰されても記録が真実です。</p>
+    <div class="flex" style="margin-bottom:12px">
+      <button class="primary" onclick="loadWatchlist()">最新データで再計算</button>
+    </div>
+    <div id="watchlist-list"><p class="muted">タブを開くと自動で再計算します。</p></div>
   </div>
 </section>
 
@@ -325,6 +342,7 @@ document.querySelectorAll('nav.tabs button').forEach(b => {
     b.classList.add('active');
     document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
     document.getElementById('tab-' + b.dataset.tab).classList.add('active');
+    if (b.dataset.tab === 'watchlist' && !_wlLoaded) loadWatchlist();
   });
 });
 
@@ -405,6 +423,44 @@ async function loadResults(recent) {
       const t3 = r.payout_3t_yen ? `<span class="muted">${r.payout_3t||''}</span> <b>¥${Number(r.payout_3t_yen).toLocaleString()}</b>` : '-';
       const f3 = r.payout_3f_yen ? `<span class="muted">${r.payout_3f||''}</span> ¥${Number(r.payout_3f_yen).toLocaleString()}` : '-';
       html += `<tr><td>${dt}</td><td><b>${r.venue}</b></td><td>${r.rno}R</td><td>${cell(0)}</td><td>${cell(1)}</td><td>${cell(2)}</td><td>${r.determinant||'-'}</td><td>${t3}</td><td>${f3}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+  } catch (e) {
+    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
+  }
+}
+
+// ウォッチリスト（オカルト/異常値サイン 生存追跡）
+let _wlLoaded = false;
+async function loadWatchlist() {
+  const wrap = document.getElementById('watchlist-list');
+  wrap.innerHTML = '<p class="muted">再計算中...（全女子戦レースを走査）</p>';
+  try {
+    const d = await api('/api/watchlist');
+    _wlLoaded = true;
+    const vClass = (v) => v === '生存' ? 'wl-alive' : (v === '黄信号' ? 'wl-watch' : 'wl-dead');
+    const counts = { '生存': 0, '黄信号': 0, '淘汰': 0 };
+    d.rows.forEach(r => counts[r.verdict]++);
+    const order = { '生存': 0, '黄信号': 1, '淘汰': 2 };
+    const rows = d.rows.slice().sort((a, b) => (order[a.verdict] - order[b.verdict]) || (b.lift - a.lift));
+    let html = `<div class="muted" style="margin-bottom:8px">対象 ${d.total_races} レース ・ 記録日 ${d.recorded_at} ・ `
+      + `<span class="wl-alive">生存 ${counts['生存']}</span> / <span class="wl-watch">黄信号 ${counts['黄信号']}</span> / <span class="wl-dead">淘汰 ${counts['淘汰']}</span></div>`;
+    html += '<table><thead><tr><th>判定</th><th>種別</th><th>条件(AND)</th><th>ペア</th><th>基準</th><th>現在</th><th>伸</th><th>的中率</th><th>倍率</th></tr></thead><tbody>';
+    for (const r of rows) {
+      const pa = `<span class="lane lane-${r.pair[0]}">${r.pair[0]}</span> <span class="lane lane-${r.pair[1]}">${r.pair[1]}</span>`;
+      const grow = r.growth > 0 ? `+${r.growth}` : `${r.growth}`;
+      html += `<tr>
+        <td><span class="${vClass(r.verdict)}">${r.verdict}</span></td>
+        <td><span class="muted">${r.dim}</span></td>
+        <td>${r.desc}</td>
+        <td>${pa}</td>
+        <td class="muted">${r.base_hits}/${r.base_support}</td>
+        <td><b>${r.hits}/${r.support}</b></td>
+        <td class="muted">${grow}</td>
+        <td>${(r.rate * 100).toFixed(0)}%</td>
+        <td>${r.lift.toFixed(1)}倍</td>
+      </tr>`;
     }
     html += '</tbody></table>';
     wrap.innerHTML = html;
