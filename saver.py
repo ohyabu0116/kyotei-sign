@@ -62,15 +62,35 @@ def _gh_get_sha(token: str) -> str | None:
         raise
 
 
+def _fetch_remote_payload() -> dict | None:
+    """data ブランチの data.json を取得。
+    CDNラグ(raw.githubusercontentは最大5分キャッシュ)でアンチクロバー判定が
+    狂うのを避けるため、即時反映される GitHub API(生メディア型)を優先し、
+    失敗時のみ raw CDN にフォールバックする。"""
+    token = os.environ.get("GH_TOKEN")
+    api = f"https://api.github.com/repos/{GH_REPO}/contents/{GH_PATH}?ref={GH_BRANCH}"
+    headers = {"Accept": "application/vnd.github.raw", "User-Agent": "kyotei-sign-saver"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        req = urllib.request.Request(api, headers=headers)
+        with urllib.request.urlopen(req, timeout=90) as r:
+            return json.loads(r.read())
+    except Exception:
+        pass
+    raw = f"https://raw.githubusercontent.com/{GH_REPO}/{GH_BRANCH}/{GH_PATH}"
+    try:
+        req = urllib.request.Request(raw, headers={"User-Agent": "kyotei-sign-saver"})
+        with urllib.request.urlopen(req, timeout=90) as r:
+            return json.loads(r.read())
+    except Exception:
+        return None
+
+
 def _remote_race_count() -> int:
     """data ブランチの data.json に入っているレース数を取得（無ければ0）"""
-    url = f"https://raw.githubusercontent.com/{GH_REPO}/{GH_BRANCH}/{GH_PATH}"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "kyotei-sign-saver"})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return len(json.loads(r.read()).get("races", []))
-    except Exception:
-        return 0
+    p = _fetch_remote_payload()
+    return len(p.get("races", [])) if p else 0
 
 
 def commit_to_github(token: str, content: str, message: str) -> bool:
@@ -142,13 +162,9 @@ def _local_race_count() -> int:
 
 def sync_from_remote() -> dict:
     """data ブランチの方がレース数が多ければ取り込む（Macの大量データをミラー）"""
-    url = f"https://raw.githubusercontent.com/{GH_REPO}/{GH_BRANCH}/{GH_PATH}"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "kyotei-sign-saver"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            payload = json.loads(r.read())
-    except Exception as e:
-        return {"ok": False, "reason": f"fetch失敗: {e}"}
+    payload = _fetch_remote_payload()
+    if payload is None:
+        return {"ok": False, "reason": "fetch失敗"}
 
     remote = len(payload.get("races", []))
     local = _local_race_count()
