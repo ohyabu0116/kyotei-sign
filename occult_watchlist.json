@@ -1,6 +1,6 @@
 {
   "recorded_at": "2026-05-30",
-  "note": "オカルト複合サイン候補（B→A運用）。各候補は『条件(AND) → 指定2艇が3着以内』。データ拡充に伴い support/的中率を再計算し、生存(>=80%)か淘汰かを追跡する。発見時は support 4-10 の小標本＝過剰適合の可能性大。id1-7=初回探索, id8-15=4エージェント横断探索(共演/機械/カレンダー/数秘術), id16=非1ペア。id17-25=異常値ハンター(anomaly_hunt.py)の完全/準完全連動(2026-05-30時点 4,676レース・統計検証なしの生共起)。",
+  "note": "オカルト複合サイン候補（B→A運用）。各候補は『条件(AND) → 指定2艇が3着以内』。データ拡充に伴い support/的中率を再計算し、生存(>=80%)か淘汰かを追跡する。発見時は support 4-10 の小標本＝過剰適合の可能性大。id1-7=初回探索, id8-15=4エージェント横断探索(共演/機械/カレンダー/数秘術), id16=非1ペア。id17-25=異常値ハンター(anomaly_hunt.py)の完全/準完全連動(2026-05-30時点 4,676レース・統計検証なしの生共起)。id26-30=異常lift(最大乖離・lift基準で判定)。id31-44=2巡目の異常値ハンター(5,087レース)で新規発見したオカルト共起(異常値=的中率基準/異常lift=lift基準)。id45-46=big_search.pyのアウトオブサンプル検証(train2/3→test1/3)+拡連複ROI>100%を通過した実証サイン(dim=ROI実証, lift基準で判定)。",
   "criteria": {"survive_rate": 0.80, "watch_rate": 0.70},
   "candidates": [
     {"id": 1, "dim": "初回", "pair": [2, 3], "preds": [{"t": "racer", "name": "植木美帆", "lane": 6}, {"t": "venue", "venue": "唐津"}], "base": {"hits": 4, "support": 5}},
@@ -38,6 +38,25 @@
     {"id": 27, "dim": "異常lift", "pair": [4, 6], "preds": [{"t": "racer_present", "name": "遠藤エミ"}, {"t": "toban_last", "digit": 3, "lane": 4}], "base": {"hits": 7, "support": 12}},
     {"id": 28, "dim": "異常lift", "pair": [5, 6], "preds": [{"t": "racer", "name": "植木美帆", "lane": 4}], "base": {"hits": 5, "support": 15}},
     {"id": 29, "dim": "異常lift", "pair": [5, 6], "preds": [{"t": "motor_last", "digit": 7, "lane": 5}, {"t": "venue", "venue": "江戸川"}], "base": {"hits": 7, "support": 23}},
-    {"id": 30, "dim": "異常lift", "pair": [5, 6], "preds": [{"t": "rno", "rno": 5}, {"t": "racer_present", "name": "魚谷香織"}], "base": {"hits": 5, "support": 16}}
+    {"id": 30, "dim": "異常lift", "pair": [5, 6], "preds": [{"t": "rno", "rno": 5}, {"t": "racer_present", "name": "魚谷香織"}], "base": {"hits": 5, "support": 16}},
+
+    {"id": 31, "dim": "異常値", "pair": [2, 3], "preds": [{"t": "racer", "name": "後藤美翼", "lane": 2}, {"t": "toban_last", "digit": 4, "lane": 5}], "base": {"hits": 8, "support": 9}},
+    {"id": 32, "dim": "異常値", "pair": [2, 4], "preds": [{"t": "motor_last", "digit": 5, "lane": 1}, {"t": "racer", "name": "今井裕梨", "lane": 1}], "base": {"hits": 8, "support": 9}},
+    {"id": 33, "dim": "異常値", "pair": [2, 3], "preds": [{"t": "racer_present", "name": "中谷朋子"}, {"t": "racer_present", "name": "藤原早菜"}], "base": {"hits": 8, "support": 9}},
+    {"id": 34, "dim": "異常値", "pair": [2, 3], "preds": [{"t": "racer_present", "name": "加藤綾"}, {"t": "racer_present", "name": "土屋千明"}], "base": {"hits": 6, "support": 6}},
+    {"id": 35, "dim": "異常値", "pair": [2, 3], "preds": [{"t": "racer_present", "name": "山川美由紀"}, {"t": "racer_present", "name": "松瀬弘美"}], "base": {"hits": 6, "support": 6}},
+    {"id": 36, "dim": "異常値", "pair": [2, 3], "preds": [{"t": "motor_last", "digit": 9, "lane": 6}, {"t": "racer", "name": "大瀧明日香", "lane": 5}], "base": {"hits": 6, "support": 6}},
+    {"id": 37, "dim": "異常値", "pair": [2, 3], "preds": [{"t": "motor_last", "digit": 6, "lane": 1}, {"t": "racer", "name": "井上未都", "lane": 3}], "base": {"hits": 6, "support": 6}},
+
+    {"id": 38, "dim": "異常lift", "pair": [5, 6], "preds": [{"t": "motor_last", "digit": 2, "lane": 6}, {"t": "toban_last", "digit": 9, "lane": 6}], "base": {"hits": 10, "support": 44}},
+    {"id": 39, "dim": "異常lift", "pair": [5, 6], "preds": [{"t": "month", "month": 2}, {"t": "racer_present", "name": "海野ゆかり"}], "base": {"hits": 8, "support": 32}},
+    {"id": 40, "dim": "異常lift", "pair": [5, 6], "preds": [{"t": "name_kanji", "kanji": "美", "lane": 1}, {"t": "racer_present", "name": "渡邉真奈美"}], "base": {"hits": 7, "support": 29}},
+    {"id": 41, "dim": "異常lift", "pair": [5, 6], "preds": [{"t": "motor_last", "digit": 4, "lane": 1}, {"t": "toban_last", "digit": 6, "lane": 2}], "base": {"hits": 8, "support": 28}},
+    {"id": 42, "dim": "異常lift", "pair": [5, 6], "preds": [{"t": "racer_present", "name": "倉持莉々"}, {"t": "toban_last", "digit": 5, "lane": 4}], "base": {"hits": 6, "support": 25}},
+    {"id": 43, "dim": "異常lift", "pair": [4, 6], "preds": [{"t": "name_kanji", "kanji": "子", "lane": 5}, {"t": "racer_present", "name": "川野芽唯"}], "base": {"hits": 7, "support": 19}},
+    {"id": 44, "dim": "異常lift", "pair": [3, 6], "preds": [{"t": "name_kanji", "kanji": "美", "lane": 4}, {"t": "racer_present", "name": "新田芳美"}], "base": {"hits": 8, "support": 17}},
+
+    {"id": 45, "dim": "ROI実証", "pair": [2, 3], "preds": [{"t": "motor_last", "digit": 3, "lane": 5}, {"t": "racer_present", "name": "中川りな"}], "base": {"hits": 18, "support": 29}},
+    {"id": 46, "dim": "ROI実証", "pair": [2, 3], "preds": [{"t": "motor_last", "digit": 9, "lane": 6}, {"t": "racer_present", "name": "大瀧明日香"}], "base": {"hits": 12, "support": 17}}
   ]
 }

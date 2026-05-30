@@ -146,7 +146,7 @@ def evaluate(con) -> dict:
         rate = hit / sup if sup else 0.0
         pb = pairbase.get(tuple(sorted((a, b))), 0.0)
         lift = rate / pb if pb > 0 else 0.0
-        if cand.get("dim") == "異常lift":
+        if cand.get("dim") in ("異常lift", "ROI実証"):
             verdict = "生存" if lift >= 2.0 else ("黄信号" if lift >= 1.5 else "淘汰")
         else:
             verdict = "生存" if rate >= surv else ("黄信号" if rate >= watch else "淘汰")

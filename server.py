@@ -37,7 +37,7 @@ import backtest
 import saver
 import watchlist_eval
 
-APP_VERSION = "2.4"
+APP_VERSION = "2.5"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
