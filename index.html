@@ -146,7 +146,7 @@ pre.log {
 <body>
 
 <header>
-  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v2.5</span></h1>
+  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v2.7</span></h1>
   <div class="stats" id="stats">
     <div>レース <b id="s-races">-</b></div>
     <div>結果 <b id="s-results">-</b></div>
@@ -656,6 +656,59 @@ function toggleRacerDetail(i) {
 }
 
 // レース詳細
+// 複合予想エンジンの描画（多角的な異常値を合成した「予想の軸」）
+function renderPredict(p) {
+  if (!p) return '';
+  if (!p.ok) return `<h4 style="margin-top:24px">🎯 複合予想</h4><p class="muted">${p.error || '予想を生成できません'}</p>`;
+  const pct = v => (v * 100).toFixed(0);
+  const m = (p.model && p.model.metrics) || {};
+  let h = `<h4 style="margin-top:24px">🎯 複合予想エンジン <span class="muted" style="font-size:11px;font-weight:400">多角的な異常値を合成した「予想の軸」</span></h4>`;
+  h += '<table><thead><tr><th>印</th><th>艇</th><th>選手</th><th>級</th><th>top3確率</th><th>枠基準</th><th>異常値</th><th></th></tr></thead><tbody>';
+  for (const b of p.boats) {
+    const col = b.anomaly >= 0.05 ? 'var(--good)' : (b.anomaly <= -0.08 ? 'var(--bad)' : 'var(--text-dim)');
+    const sgn = b.anomaly >= 0 ? '+' : '';
+    const flags = (b.flags || []).map(f => `<span class="badge ${f === '妙味' ? 'ok' : 'bad'}" style="margin-left:4px">${f}</span>`).join('');
+    h += `<tr>
+      <td style="font-size:18px;text-align:center">${b.mark}</td>
+      <td><span class="lane lane-${b.lane}">${b.lane}</span></td>
+      <td><b>${b.name || ''}</b></td>
+      <td>${b.rank || ''}</td>
+      <td style="min-width:130px">
+        <div style="background:var(--bg3);border-radius:3px;height:16px;position:relative;overflow:hidden">
+          <div style="background:var(--accent);height:100%;width:${Math.round(b.p * 100)}%"></div>
+          <span style="position:absolute;left:6px;top:0;font-size:11px;line-height:16px;color:var(--text)">${pct(b.p)}%</span>
+        </div>
+      </td>
+      <td class="muted">${pct(b.base)}%</td>
+      <td style="color:${col};font-weight:700">${sgn}${(b.anomaly * 100).toFixed(0)}pt</td>
+      <td>${flags}</td>
+    </tr>`;
+  }
+  h += '</tbody></table>';
+  h += `<p style="margin:10px 0"><b>軸:</b> ${p.axis.map(l => `<span class="lane lane-${l}">${l}</span>`).join(' ')} <b style="margin-left:14px">相手:</b> ${p.partners.map(l => `<span class="lane lane-${l}">${l}</span>`).join(' ')}</p>`;
+  if (p.anomaly_pos) h += `<div style="background:rgba(63,185,80,.1);border-left:3px solid var(--good);padding:8px 12px;margin:8px 0;border-radius:4px">📈 ${p.anomaly_pos.text}</div>`;
+  if (p.anomaly_neg) h += `<div style="background:rgba(248,81,73,.1);border-left:3px solid var(--bad);padding:8px 12px;margin:8px 0;border-radius:4px">📉 ${p.anomaly_neg.text}</div>`;
+  if (p.tickets && p.tickets.length) {
+    h += '<div style="margin-top:10px"><b>参考フォーメーション</b>';
+    for (const t of p.tickets) {
+      h += `<div class="muted" style="margin:4px 0"><span style="color:var(--text)">${t.type} ${t.name || ''}</span>: ${t.combos.map(c => `<code style="background:var(--bg3);padding:1px 5px;border-radius:3px;margin-right:3px">${c}</code>`).join('')} <span style="font-size:11px">(${t.note})</span></div>`;
+    }
+    h += '</div>';
+  }
+  if (p.occult_fires && p.occult_fires.length) {
+    h += `<div style="margin-top:10px"><b>🔮 オカルト/異常値サイン発火 (${p.occult_fires.length})</b>`;
+    for (const o of p.occult_fires) {
+      h += `<div class="muted" style="margin:4px 0">[${o.dim}] ${o.desc} → <b style="color:var(--pink)">${o.pair.join('-')}</b> が3着以内 <span style="font-size:11px">(実績 ${o.base} ・ ${(o.base_rate * 100).toFixed(0)}%)</span></div>`;
+    }
+    h += '</div>';
+  }
+  h += `<p class="muted" style="font-size:11px;margin-top:12px;border-top:1px solid var(--border);padding-top:8px">
+    モデル: ${p.model.n_races}レース学習 / OOS AUC ${m.auc} ・較正済 / 上位2艇とも3着内 的中${m.axis_top2_both_top3 ? (m.axis_top2_both_top3 * 100).toFixed(0) : '-'}% <span style="opacity:.7">(枠順だけなら${m.lane_top2_both_top3 ? (m.lane_top2_both_top3 * 100).toFixed(0) : '-'}%)</span>。
+    ※確率と軸の精度を高める道具です。フラットな3連複の回収率は約85%(控除率相当)で、利益を保証するものではありません。
+  </p>`;
+  return h;
+}
+
 async function loadRace() {
   const date = ymd_nohyphen(document.getElementById('r-date').value);
   const jcd = document.getElementById('r-jcd').value;
@@ -687,6 +740,8 @@ async function loadRace() {
       }
       html += '</tbody></table>';
     }
+    // 複合予想エンジン（多角的異常値の合成）
+    if (d.predict) html += renderPredict(d.predict);
     // 発火サイン
     html += '<h4 style="margin-top:20px">🔥 発火サイン</h4>';
     if (!d.fires || !d.fires.length) {

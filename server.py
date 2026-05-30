@@ -36,8 +36,9 @@ import miner
 import backtest
 import saver
 import watchlist_eval
+import composite
 
-APP_VERSION = "2.6"
+APP_VERSION = "2.7"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -253,10 +254,22 @@ class Handler(BaseHTTPRequestHandler):
                 (date, jcd, rno),
             ).fetchone()
 
+        # 複合予想エンジン（多角的な異常値を合成した予想の軸）
+        predict = None
+        if entries:
+            try:
+                meta = {"date": date, "rno": rno,
+                        "venue": race_row["venue"] if race_row else ""}
+                predict = composite.predict_race(entries, meta)
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                predict = {"ok": False, "error": str(e)}
+
         return _json_response(self, 200, {
             "race": dict(race_row) if race_row else None,
             "entries": [dict(e) for e in entries],
             "fires": fires,
+            "predict": predict,
             "result": dict(result) if result else None,
         })
 

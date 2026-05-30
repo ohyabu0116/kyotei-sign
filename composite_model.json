@@ -1,0 +1,82 @@
+{
+  "model_version": "1.0",
+  "trained_at": "2026-05-31 07:46",
+  "n_races": 6145,
+  "n_entries": 36870,
+  "lane_base": {
+    "1": 0.8093,
+    "2": 0.6063,
+    "3": 0.5474,
+    "4": 0.4656,
+    "5": 0.3343,
+    "6": 0.2371
+  },
+  "num_feats": [
+    "national_win",
+    "national_3",
+    "local_win",
+    "motor_3",
+    "avg_st",
+    "weight",
+    "age"
+  ],
+  "stats": {
+    "national_win": [
+      4.8782,
+      1.5022
+    ],
+    "national_3": [
+      45.2215,
+      19.2364
+    ],
+    "local_win": [
+      4.019,
+      2.4138
+    ],
+    "motor_3": [
+      48.8895,
+      13.9917
+    ],
+    "avg_st": [
+      0.1747,
+      0.0256
+    ],
+    "weight": [
+      47.3723,
+      2.3106
+    ],
+    "age": [
+      34.2901,
+      10.2068
+    ]
+  },
+  "weights": {
+    "lane1": 1.1795,
+    "lane2": 0.3727,
+    "lane3": 0.1399,
+    "lane4": -0.1237,
+    "lane5": -0.5939,
+    "lane6": -0.9879,
+    "national_win": 0.2733,
+    "national_3": 0.31,
+    "local_win": 0.0682,
+    "motor_3": 0.0391,
+    "avg_st": -0.0793,
+    "weight": -0.0764,
+    "age": -0.0035,
+    "flying": -0.031
+  },
+  "bias": -0.0135,
+  "metrics": {
+    "oos_logloss": 0.5824,
+    "lane_logloss": 0.6175,
+    "auc": 0.7558,
+    "axis_top1_top3": 0.8356,
+    "lane_top1_top3": 0.8116,
+    "axis_top2_both_top3": 0.5607,
+    "lane_top2_both_top3": 0.4796,
+    "n_test_races": 1837,
+    "cut_date": "20251123",
+    "note_3rempuku_roi": "flat 3連複は約85%(=控除率)。本モデルは確率/軸の精度向上が役割でROI保証ではない。"
+  }
+}
