@@ -38,7 +38,7 @@ import saver
 import watchlist_eval
 import composite
 
-APP_VERSION = "2.7"
+APP_VERSION = "2.8"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
