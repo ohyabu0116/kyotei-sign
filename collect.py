@@ -80,6 +80,10 @@ def collect_day(date: str, *, force: bool = False,
 
     db.init_db()
     with db.get_conn() as conn:
+        # 出走選手ベースの女子戦判定に使うロスター（既存DBから構築）。
+        # 母集団が薄い初回(コールドスタート)は旧挙動にフォールバック。
+        female_toban = db.build_female_toban(conn)
+        roster_ok = len(female_toban) >= 100
         for v in ladies_venues:
             jcd = v["jcd"]
             for rno in range(1, 13):
@@ -111,12 +115,15 @@ def collect_day(date: str, *, force: bool = False,
                 except Exception as e:
                     stats["errors"] += 1
                     progress(f"  [{date} {v['venue']} {rno}R] result ERR: {e}")
-            # この会場は女子戦なので、収集した全レースを is_ladies=1 に確定
-            # （タイトルがＶＳ等の略称でキーワード判定を漏れても確実に女子戦扱い）
-            conn.execute(
-                "UPDATE races SET is_ladies=1 WHERE date=? AND jcd=?",
-                (date, jcd),
-            )
+            # 会場一括ではなく「出走選手の女子比率」でレース単位に is_ladies を確定。
+            # 併催の男子戦(チャレンジカップ/マスターズVSルーキーズ等)が同一会場・
+            # 同一タイトルで紛れ込むのを防ぐ。ロスターが薄い初回のみ旧挙動。
+            for rno in range(1, 13):
+                il = db.race_is_ladies(conn, date, jcd, rno, female_toban) if roster_ok else 1
+                conn.execute(
+                    "UPDATE races SET is_ladies=? WHERE date=? AND jcd=? AND rno=?",
+                    (il, date, jcd, rno),
+                )
         conn.commit()
     return stats
 

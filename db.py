@@ -13,6 +13,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "kyotei_sign.db")
 _lock = threading.Lock()
 
+# 女子戦判定用キーワード
+# LADIES_KW: 純女子戦ブランド。MIXED_KW: 男子/混合の併催マーカー(これを含む
+# タイトルは男女混在の可能性があるためロスター作成から除外し、タイトルだけで
+# 女子戦と即断しない)。
+LADIES_KW = ("ヴィーナス", "オールレディース", "レディース", "クイーン",
+             "プリンセス", "女王", "ガールズ", "ムーンライト")
+MIXED_KW = ("チャレンジカップ", "マスターズ", "ルーキー")
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS races (
@@ -220,6 +228,41 @@ def save_result(conn, result) -> None:
           result.payout_3t, result.payout_3t_yen,
           result.payout_3f, result.payout_3f_yen,
           result.wind_dir, result.wind_speed, result.wave, result.weather))
+
+
+# ── 女子戦判定（出走選手ベース）─────────────────────────────────
+def build_female_toban(conn) -> set:
+    """純女子戦タイトル(混合マーカー無し)のレースに出走した toban を女子として収集。
+    is_ladies フラグには依存せず、タイトルのみで母集団を作るので汚染の影響を受けない。"""
+    like_l = " OR ".join(["r.title LIKE ?"] * len(LADIES_KW))
+    like_m = " OR ".join(["r.title LIKE ?"] * len(MIXED_KW))
+    sql = (f"SELECT DISTINCT e.toban FROM race_entries e "
+           f"JOIN races r ON e.date=r.date AND e.jcd=r.jcd AND e.rno=r.rno "
+           f"WHERE ({like_l}) AND NOT ({like_m})")
+    params = [f"%{k}%" for k in LADIES_KW] + [f"%{k}%" for k in MIXED_KW]
+    return {row[0] for row in conn.execute(sql, params) if row[0]}
+
+
+def race_is_ladies(conn, date: str, jcd: str, rno: int,
+                   female_toban: set, title: Optional[str] = None) -> int:
+    """1レースを「出走選手の女子比率>=50%」で女子戦判定。
+    出走情報が無い場合のみタイトルキーワードでフォールバック
+    (混合マーカーがあれば0、女子ブランドがあれば1)。"""
+    tobans = [r[0] for r in conn.execute(
+        "SELECT toban FROM race_entries WHERE date=? AND jcd=? AND rno=?",
+        (date, jcd, rno)) if r[0]]
+    if tobans:
+        fem = sum(1 for t in tobans if t in female_toban)
+        return 1 if fem / len(tobans) >= 0.5 else 0
+    if title is None:
+        row = conn.execute(
+            "SELECT title FROM races WHERE date=? AND jcd=? AND rno=?",
+            (date, jcd, rno)).fetchone()
+        title = row[0] if row else ""
+    title = title or ""
+    if any(k in title for k in MIXED_KW):
+        return 0
+    return 1 if any(k in title for k in LADIES_KW) else 0
 
 
 # ── 統計 ─────────────────────────────────────────────────────────
