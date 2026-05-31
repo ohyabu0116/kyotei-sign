@@ -52,7 +52,8 @@ def load_races(conn):
 
     info = {"date","jcd","rno":int,"venue","title",
             "lanes": {lane:int -> {"name","toban","motor":int|None}},
-            "payout":int|None, "tier":int, "finish_top3": set[int]}
+            "payout":int|None, "tier":int, "finish_top3": set[int],
+            "finish_order": list[int]}  # 1着→2着→… の号艇(3連単用)
     """
     import json
     conn.row_factory = sqlite3.Row
@@ -63,14 +64,18 @@ def load_races(conn):
     ):
         k = (r["date"], r["jcd"], r["rno"])
         top3 = set()
+        order = []
         fj = r["finish_json"]
         if fj:
             try:
                 f = json.loads(fj)
-                top3 = set(int(x[1]) for x in f[:3])
+                f_sorted = sorted(f, key=lambda x: int(x[0]))  # rank昇順
+                order = [int(x[1]) for x in f_sorted]
+                top3 = set(order[:3])
             except Exception:
                 top3 = set()
-        res[k] = (r["payout_3t_yen"], top3)
+                order = []
+        res[k] = (r["payout_3t_yen"], top3, order)
 
     races = {}
     for r in conn.execute(
@@ -85,7 +90,7 @@ def load_races(conn):
             continue
         info = races.get(k)
         if info is None:
-            payout, top3 = res[k]
+            payout, top3, order = res[k]
             info = {
                 "date": r["date"],
                 "jcd": r["jcd"],
@@ -96,6 +101,7 @@ def load_races(conn):
                 "payout": payout,
                 "tier": tier(payout),
                 "finish_top3": top3,
+                "finish_order": order,
             }
             races[k] = info
         m = r["motor_no"]
@@ -360,6 +366,68 @@ def are_regulars(races, *, min_support=15):
     return out
 
 
+def mine_lane_top3(races, *, min_support=12):
+    """号艇ごとのオカルト述語 → 「その号艇が3着以内に入る」 lift をマイニング。
+
+    買い目(3連単)を組むための“どの艇が来るか”シグナル。lane依存述語のみ:
+      R(選手@号) / TL(登番末尾@号) / ML(M末尾@号) / K(漢字@号)。
+    A3 と RP は lane非依存 or R(@3) と重複するため除外。
+
+    返り値:
+      {"base": {lane:int -> 3着内率}, "signals": {pred_tuple -> {...}}}
+    lift = P(lane∈top3 | pred) / P(lane∈top3)。基礎率はあくまで内部の正規化分母で、
+    「枠の強さ」として表に出すためのものではない。
+    """
+    lane_cnt = defaultdict(int)
+    lane_in = defaultdict(int)
+    for info in races.values():
+        top3 = info.get("finish_top3") or set()
+        if not top3:
+            continue
+        for lane in info["lanes"].keys():
+            lane_cnt[lane] += 1
+            if lane in top3:
+                lane_in[lane] += 1
+    base = {L: (lane_in[L] / lane_cnt[L] if lane_cnt[L] else 0.0)
+            for L in lane_cnt}
+
+    sup = defaultdict(int)
+    hit = defaultdict(int)
+    pred_lane = {}
+    for info in races.values():
+        top3 = info.get("finish_top3") or set()
+        if not top3:
+            continue
+        for p in preds_of(info):
+            t = p[0]
+            if t in ("R", "TL", "ML", "K"):
+                lane = p[2]
+            else:
+                continue  # A3/RP/V/N/M/J/D3 は lane非依存 or 重複
+            sup[p] += 1
+            pred_lane[p] = lane
+            if lane in top3:
+                hit[p] += 1
+
+    signals = {}
+    for p, s in sup.items():
+        if s < min_support:
+            continue
+        lane = pred_lane[p]
+        b = base.get(lane, 0.0)
+        conf = hit[p] / s
+        lift = (conf / b) if b > 0 else 0.0
+        signals[p] = {
+            "lane": lane,
+            "support": s,
+            "hits": hit[p],
+            "conf": conf,
+            "lift": lift,
+            "desc": cond_desc((p,)),
+        }
+    return {"base": base, "signals": signals}
+
+
 def rough_venues(races):
     """会場別の荒れ度(万舟率)。conf 降順。"""
     n = len(races)
@@ -466,6 +534,7 @@ def build_all(conn, *, min_support_cond=15, min_support_role=8):
         "regulars": are_regulars(races, min_support=min_support_cond),
         "venues": rough_venues(races),
         "common": common_factors(top_conditions),
+        "lane_top3": mine_lane_top3(races, min_support=min_support_role + 4),
     }
 
 
@@ -596,6 +665,169 @@ def verify_period(conn, from_date, to_date, bundle, *, fire_lift_min=1.8):
     }
 
 
+# ----------------------------------------------------------------------------
+# オカルト → 具体的な買い目(3連単)
+# ----------------------------------------------------------------------------
+def score_boats(lanes, venue, rno, date, bundle):
+    """カードの各艇を「3着内に来そうか」のオカルトスコアで評価。
+
+    score = Σ max(0, lift-1) × log1p(support) over その艇に効く lane依存述語
+            (選手@号 / 登番末尾@号 / M末尾@号 / 漢字@号)。
+    勝率・モーター2連率・級別など一般情報は一切使わない(bundle["lane_top3"]
+    のオカルト lift だけ)。
+    返り値: スコア降順の boats[{lane,name,score,signals[]}]。
+    """
+    import math
+    info = _card_to_info(lanes, venue, rno, date)
+    lt = bundle.get("lane_top3") or {"base": {}, "signals": {}}
+    sig = lt.get("signals") or {}
+    per = {}
+    for e in lanes:
+        L = int(e["lane"])
+        per[L] = {"lane": L, "name": _clean_name(e.get("name")),
+                  "score": 0.0, "signals": []}
+    for p in preds_of(info):
+        d = sig.get(p)
+        if not d:
+            continue
+        L = d["lane"]
+        if L not in per:
+            continue
+        lift = d["lift"]
+        contrib = (lift - 1.0) * math.log1p(d["support"]) if lift > 1.0 else 0.0
+        per[L]["score"] += contrib
+        per[L]["signals"].append({
+            "desc": d["desc"], "lift": lift,
+            "support": d["support"], "conf": d["conf"],
+        })
+    boats = sorted(per.values(), key=lambda x: (-x["score"], x["lane"]))
+    for b in boats:
+        b["signals"] = sorted(b["signals"], key=lambda s: -s["lift"])[:5]
+    return boats
+
+
+def _formation(ranked, level):
+    """ranked: スコア降順 lane(int) リスト。level に応じ 1/2/3着の候補幅を決め
+    3連単 combos(set of (l1,l2,l3)) と structure を返す。荒れるほど穴まで広げる。"""
+    n = len(ranked)
+
+    def take(k):
+        return ranked[:min(k, n)]
+
+    if level == "万舟警報":
+        first, second, third = take(2), take(5), take(6)
+    elif level == "やや荒れ":
+        first, second, third = take(2), take(4), take(5)
+    else:  # 堅め
+        first, second, third = take(1), take(3), take(5)
+
+    combos = set()
+    for a in first:
+        for b in second:
+            if b == a:
+                continue
+            for c in third:
+                if c == a or c == b:
+                    continue
+                combos.add((a, b, c))
+    return combos, {"first": first, "second": second, "third": third}
+
+
+def suggest_tickets(lanes, venue, rno, date, bundle, level=None):
+    """オカルトスコア順 → 荒れ度に応じた 3連単フォーメーションを生成。"""
+    boats = score_boats(lanes, venue, rno, date, bundle)
+    if level is None:
+        level = evaluate_card(lanes, venue, rno, date, bundle)["level"]
+    ranked = [b["lane"] for b in boats]
+    combos, structure = _formation(ranked, level)
+    combos_sorted = sorted(combos)
+    points = len(combos_sorted)
+    return {
+        "level": level,
+        "boats": boats,
+        "ranked": ranked,
+        "structure": structure,
+        "combos": [list(c) for c in combos_sorted],
+        "points": points,
+        "cost_yen": points * 100,
+    }
+
+
+def backtest_tickets(conn, from_date, to_date, bundle):
+    """[from_date,to_date] の女子戦・結果ありレースで、オカルト買い目を実際に
+    買い続けたら回収率がどうなるかを検証(¥100/点)。
+
+    回収率% = 払戻総額 ÷ 賭け金総額 × 100。3連単は的中したレースで
+    payout_3t_yen(=100円賭けの払戻)が丸ごと返る前提。
+    ※ bundle は同じ全期間から採掘しているためインサンプル(楽観寄り)。
+    """
+    races = load_races(conn)
+    period = [v for v in races.values() if from_date <= v["date"] <= to_date]
+
+    total_cost = 0
+    total_return = 0
+    bet_races = 0
+    hit_races = 0
+    pts_sum = 0
+    lv0 = {"races": 0, "hits": 0, "cost": 0, "ret": 0, "points": 0}
+    by_level = {"万舟警報": dict(lv0), "やや荒れ": dict(lv0), "堅め": dict(lv0)}
+
+    for info in period:
+        order = info.get("finish_order") or []
+        if len(order) < 3:
+            continue
+        lanes = [{"lane": L, "toban": ed.get("toban"),
+                  "name": ed.get("name"), "motor": ed.get("motor")}
+                 for L, ed in info["lanes"].items()]
+        ev = evaluate_card(lanes, info["venue"], info["rno"], info["date"], bundle)
+        sug = suggest_tickets(lanes, info["venue"], info["rno"], info["date"],
+                              bundle, level=ev["level"])
+        pts = sug["points"]
+        if pts == 0:
+            continue
+        cost = pts * 100
+        lvl = sug["level"]
+        bet_races += 1
+        pts_sum += pts
+        total_cost += cost
+        by_level[lvl]["races"] += 1
+        by_level[lvl]["cost"] += cost
+        by_level[lvl]["points"] += pts
+        actual = (order[0], order[1], order[2])
+        if actual in {tuple(c) for c in sug["combos"]}:
+            pay = info["payout"] or 0
+            hit_races += 1
+            total_return += pay
+            by_level[lvl]["hits"] += 1
+            by_level[lvl]["ret"] += pay
+
+    roi = (total_return / total_cost * 100) if total_cost else 0.0
+    out_levels = {}
+    for lvl, d in by_level.items():
+        out_levels[lvl] = {
+            "races": d["races"],
+            "hits": d["hits"],
+            "hit_rate": (d["hits"] / d["races"]) if d["races"] else 0.0,
+            "cost_yen": d["cost"],
+            "return_yen": d["ret"],
+            "roi_pct": (d["ret"] / d["cost"] * 100) if d["cost"] else 0.0,
+            "avg_points": (d["points"] / d["races"]) if d["races"] else 0.0,
+        }
+    return {
+        "from": from_date,
+        "to": to_date,
+        "bet_races": bet_races,
+        "hit_races": hit_races,
+        "hit_rate": (hit_races / bet_races) if bet_races else 0.0,
+        "avg_points": (pts_sum / bet_races) if bet_races else 0.0,
+        "cost_yen": total_cost,
+        "return_yen": total_return,
+        "roi_pct": roi,
+        "by_level": out_levels,
+        "in_sample": True,
+    }
+
+
 if __name__ == "__main__":
     BASE = os.path.dirname(os.path.abspath(__file__))
     DBP = os.path.join(BASE, "kyotei_sign.db")
@@ -653,5 +885,46 @@ if __name__ == "__main__":
     show_cm("登番末尾", cm["toban_last"])
     show_cm("漢字", cm["kanji"])
     print(f"  述語タイプ分布: {dict(cm['types'])}")
+
+    lt = bundle["lane_top3"]
+    print(f"\n=== 号艇別 3着内 基礎率(内部正規化用) ===")
+    print("  " + "  ".join(f"{L}号 {lt['base'].get(L,0)*100:.0f}%"
+                           for L in sorted(lt['base'])))
+    print(f"  lane依存シグナル数(support>=12): {len(lt['signals'])}")
+    top_sig = sorted(lt["signals"].values(), key=lambda x: -x["lift"])[:12]
+    print(f"\n=== 来る艇シグナル TOP12 (3着内 lift順) ===")
+    print(f"{'的中/発火':>10} {'率':>5} {'lift':>5} {'号':>3}  述語")
+    for d in top_sig:
+        print(f"{d['hits']:>4}/{d['support']:<5}{d['conf']*100:4.0f}% "
+              f"{d['lift']:5.2f} {d['lane']:>2}号  {d['desc']}")
+
+    # サンプル買い目(最初の女子戦カードで実演)
+    races = load_races(conn)
+    sample = next(iter(races.values()))
+    s_lanes = [{"lane": L, "toban": ed.get("toban"),
+                "name": ed.get("name"), "motor": ed.get("motor")}
+               for L, ed in sample["lanes"].items()]
+    sug = suggest_tickets(s_lanes, sample["venue"], sample["rno"], sample["date"], bundle)
+    print(f"\n=== サンプル買い目 {sample['date']} {sample['venue']}{sample['rno']}R "
+          f"[{sug['level']}] ===")
+    for b in sug["boats"]:
+        tag = ", ".join(s["desc"] for s in b["signals"][:2]) or "-"
+        print(f"  {b['lane']}号 {b['name']:<8} score={b['score']:5.2f}  {tag}")
+    st = sug["structure"]
+    print(f"  1着{st['first']} → 2着{st['second']} → 3着{st['third']}")
+    print(f"  {sug['points']}点 / ¥{sug['cost_yen']:,}  実結果={sample.get('finish_order')}")
+
+    print(f"\n=== 買い目バックテスト(全期間・インサンプル) ===")
+    dates = sorted(v["date"] for v in races.values())
+    bt = backtest_tickets(conn, dates[0], dates[-1], bundle)
+    print(f"  対象 {bt['bet_races']}レース  的中 {bt['hit_races']}  "
+          f"的中率 {bt['hit_rate']*100:.1f}%  平均 {bt['avg_points']:.1f}点")
+    print(f"  賭金 ¥{bt['cost_yen']:,}  払戻 ¥{bt['return_yen']:,}  "
+          f"回収率 {bt['roi_pct']:.1f}%")
+    for lvl, d in bt["by_level"].items():
+        if d["races"]:
+            print(f"    {lvl:>6}: {d['races']:>4}R 的中{d['hits']:>3} "
+                  f"({d['hit_rate']*100:4.1f}%) 回収率 {d['roi_pct']:6.1f}% "
+                  f"平均{d['avg_points']:.0f}点")
 
     conn.close()

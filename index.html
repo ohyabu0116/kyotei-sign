@@ -205,7 +205,7 @@ pre.log {
 <body>
 
 <header>
-  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v4.1</span></h1>
+  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v4.2</span></h1>
   <div class="stats" id="stats">
     <div>レース <b id="s-races">-</b></div>
     <div>女子戦 <b id="s-ladies">-</b></div>
@@ -727,10 +727,10 @@ async function loadVerify() {
     html += kpiBox(`<span style="color:var(--manshu)">${hitRate}</span>`, '発火時万舟率', `ベース ${baseRate} ${liftStr}`);
     html += kpiBox(`<span style="color:var(--yaya)">${softHit}</span>`, 'soft的中率');
     html += kpiBox(avgPay, '平均万舟配当');
-    html += kpiBox(`<span style="color:var(--good)">${approxRoi}</span>`, '概算回収率(目安)');
+    html += kpiBox(`<span class="muted">${approxRoi}</span>`, '楽観上限(参考)');
     html += '</div>';
 
-    html += `<div class="roi-note">概算回収率は『発火時の万舟率 × 平均万舟配当』の楽観上限(<b>100%で収支トントン</b>／買い目1点・的中=平均配当と仮定)。3連単は買い目を増やすほど実際の回収率は下がります。正式値は買い目確定後に算出。</div>`;
+    html += `<div class="roi-note">上の「楽観上限」は『発火時の万舟率 × 平均万舟配当』で、買い目1点・的中=平均配当と仮定した理論上限です。<b>実際にいくら戻るか</b>は下の「オカルト買い目のリアル回収率」を見てください。</div>`;
     html += '</div>';
 
     // by_level テーブル
@@ -749,6 +749,44 @@ async function loadVerify() {
         });
         html += '</tbody></table></div></div>';
       }
+    }
+
+    // オカルト買い目のリアル回収率(バックテスト)
+    if (d.tickets) {
+      const t = d.tickets;
+      const roi = t.roi_pct != null ? t.roi_pct.toFixed(1) + '%' : '-';
+      const roiColor = (t.roi_pct || 0) >= 100 ? 'var(--good)' : 'var(--bad)';
+      html += '<div class="card"><h2>オカルト買い目のリアル回収率</h2>';
+      html += '<p class="muted" style="font-size:12px;margin:-4px 0 10px">この期間、各レースで荒れ度に応じたオカルト買い目（フォーメーション）を ¥100/点 で実際に買い続けた場合の集計。'
+        + (t.in_sample ? '※条件は同じ全期間から抽出しているためインサンプル（やや楽観）。' : '') + '</p>';
+      html += '<div class="verify-summary">';
+      html += kpiBox(t.bet_races != null ? Number(t.bet_races).toLocaleString('ja-JP') : '-', '購入レース');
+      html += kpiBox(t.hit_races != null ? Number(t.hit_races).toLocaleString('ja-JP') : '-', '的中');
+      html += kpiBox(t.hit_rate != null ? (t.hit_rate * 100).toFixed(1) + '%' : '-', '的中率');
+      html += kpiBox(t.avg_points != null ? Number(t.avg_points).toFixed(1) + '点' : '-', '平均点数/R');
+      html += kpiBox('¥' + (t.cost_yen || 0).toLocaleString('ja-JP'), '賭け金総額');
+      html += kpiBox('¥' + (t.return_yen || 0).toLocaleString('ja-JP'), '払戻総額');
+      html += kpiBox(`<span style="color:${roiColor};font-weight:700">${roi}</span>`, 'リアル回収率', '100%で収支トントン');
+      html += '</div>';
+      if (t.by_level && typeof t.by_level === 'object') {
+        html += '<div style="overflow-x:auto;margin-top:10px"><table><thead><tr><th>レベル</th><th>購入</th><th>的中</th><th>的中率</th><th>平均点</th><th>回収率</th></tr></thead><tbody>';
+        Object.entries(t.by_level).forEach(([lvl, v]) => {
+          if (!v.races) return;
+          const r = v.roi_pct != null ? v.roi_pct.toFixed(1) + '%' : '-';
+          const c = (v.roi_pct || 0) >= 100 ? 'var(--good)' : 'var(--bad)';
+          html += `<tr>
+            <td>${levelBadge(lvl)}</td>
+            <td>${v.races}</td>
+            <td>${v.hits}</td>
+            <td>${(v.hit_rate * 100).toFixed(1)}%</td>
+            <td>${Number(v.avg_points).toFixed(0)}</td>
+            <td style="color:${c}"><b>${r}</b></td>
+          </tr>`;
+        });
+        html += '</tbody></table></div>';
+        html += '<p class="muted" style="font-size:11px;margin-top:8px">荒れ度が高いレース（万舟警報）ほどオカルト買い目が効きやすい傾向。堅めのレースはオカルトで穴を狙う妙味が薄く回収率が落ちます。</p>';
+      }
+      html += '</div>';
     }
 
     wrap.innerHTML = html;
@@ -827,6 +865,41 @@ function occultForecast(a) {
   return h;
 }
 
+function occultTickets(t) {
+  if (!t || !Array.isArray(t.boats)) return '';
+  let h = `<div class="are-race-card" style="cursor:default;margin-top:14px">
+    <div class="are-race-header">
+      <div class="are-title"><b>オカルト買い目（3連単）</b>
+        <div class="venue-r">荒れ度 ${levelBadge(t.level)} に応じたフォーメーション</div></div>
+      <div class="are-fired-count">${t.points}点 / ¥${(t.cost_yen||0).toLocaleString('ja-JP')}</div>
+    </div>
+    <div class="are-detail open">`;
+  h += '<table><thead><tr><th>順</th><th>艇</th><th>選手</th><th>オカルトスコア</th><th>効いているサイン</th></tr></thead><tbody>';
+  t.boats.forEach((b, i) => {
+    const sig = (b.signals || []).map(s =>
+      `<span class="chip" title="lift×${Number(s.lift).toFixed(2)} / ${s.support}件">${s.desc}</span>`
+    ).join(' ') || '<span class="muted">-</span>';
+    h += `<tr>
+      <td>${i + 1}</td>
+      <td><span class="lane lane-${b.lane}">${b.lane}</span></td>
+      <td><b>${b.name || ''}</b></td>
+      <td><b>${Number(b.score || 0).toFixed(2)}</b></td>
+      <td>${sig}</td>
+    </tr>`;
+  });
+  h += '</tbody></table>';
+  const st = t.structure || {};
+  const laneSet = arr => (arr || []).map(l => `<span class="lane lane-${l}">${l}</span>`).join(' ');
+  h += `<div style="margin-top:12px;line-height:2.2">
+    <div><b>1着</b> ${laneSet(st.first)}</div>
+    <div><b>2着</b> ${laneSet(st.second)}</div>
+    <div><b>3着</b> ${laneSet(st.third)}</div>
+  </div>`;
+  h += `<p class="muted" style="font-size:11px;margin-top:8px">スコア＝オカルトサイン（選手@号・登番末尾・モーター末尾・名前の漢字）が「その艇が過去3着内に来た」liftの合算。勝率・モーター2連率・枠の強さは一切不使用。荒れ度が高いほど穴艇まで広く買います。</p>`;
+  h += '</div></div>';
+  return h;
+}
+
 async function loadRace() {
   const date = stripHyphen(document.getElementById('r-date').value);
   const jcd = document.getElementById('r-jcd').value;
@@ -843,6 +916,9 @@ async function loadRace() {
       html += occultForecast(d.are);
     } else {
       html += '<p class="muted">出走表が未取得です。「データ収集」タブで取得してから再表示してください。</p>';
+    }
+    if (d.tickets) {
+      html += occultTickets(d.tickets);
     }
     if (d.entries && d.entries.length) {
       html += occultMemberTable(d.entries);
@@ -862,6 +938,23 @@ async function loadRace() {
       const tier = yen >= 10000 ? '<span class="badge manshu">万舟</span>' : (yen >= 5000 ? '<span class="badge yaya">やや荒れ</span>' : '<span class="badge kata">堅</span>');
       html += `<p>3連単 ${d.result.payout_3t || '-'} ¥${yen.toLocaleString('ja-JP')} ${tier}</p>`;
       html += `<p>3連複 ${d.result.payout_3f || '-'} ¥${(d.result.payout_3f_yen || 0).toLocaleString('ja-JP')}</p>`;
+      // オカルト買い目の答え合わせ
+      if (d.tickets && Array.isArray(d.tickets.combos)) {
+        const valid = fin.filter(r => !isNaN(Number(r[0]))).sort((a, b) => Number(a[0]) - Number(b[0]));
+        if (valid.length >= 3) {
+          const act = [valid[0][1], valid[1][1], valid[2][1]];
+          const hit = d.tickets.combos.some(c => c[0] === act[0] && c[1] === act[1] && c[2] === act[2]);
+          const cost = d.tickets.cost_yen || 0;
+          let line = `オカルト買い目（${d.tickets.points}点 ¥${cost.toLocaleString('ja-JP')}）→ `;
+          if (hit) {
+            const profit = yen - cost;
+            line += `<span class="badge manshu">的中</span> 払戻¥${yen.toLocaleString('ja-JP')} ／ 収支 <b style="color:${profit >= 0 ? 'var(--good)' : 'var(--bad)'}">${profit >= 0 ? '+' : ''}¥${profit.toLocaleString('ja-JP')}</b>`;
+          } else {
+            line += `<span class="badge kata">不的中</span> 収支 <b style="color:var(--bad)">-¥${cost.toLocaleString('ja-JP')}</b>`;
+          }
+          html += `<p style="margin-top:6px">${line}</p>`;
+        }
+      }
     }
     wrap.innerHTML = html;
   } catch (e) {

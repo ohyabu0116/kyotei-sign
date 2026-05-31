@@ -39,7 +39,7 @@ import watchlist_eval
 import composite
 import are_engine
 
-APP_VERSION = "4.1"
+APP_VERSION = "4.2"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -277,17 +277,22 @@ class Handler(BaseHTTPRequestHandler):
             # 予想はオカルト荒れ条件のみで完結させる。
             # 勝率/モーター2連率/枠の強さ等の一般情報・確率モデルは一切使わない。
             are = None
+            tickets = None
             if entries:
                 bundle = _get_are_bundle(conn)
                 lanes = [{"lane": e["lane"], "toban": e["toban"],
                           "name": e["name"], "motor": e["motor_no"]} for e in entries]
                 venue = race_row["venue"] if race_row else ""
                 are = are_engine.evaluate_card(lanes, venue, rno, date, bundle)
+                # オカルトシグナルから具体的な3連単買い目を生成。
+                tickets = are_engine.suggest_tickets(
+                    lanes, venue, rno, date, bundle, level=are["level"])
 
         return _json_response(self, 200, {
             "race": dict(race_row) if race_row else None,
             "entries": [dict(e) for e in entries],
             "are": are,
+            "tickets": tickets,
             "result": dict(result) if result else None,
         })
 
@@ -352,6 +357,8 @@ class Handler(BaseHTTPRequestHandler):
         with db.get_conn() as conn:
             bundle = _get_are_bundle(conn)
             res = are_engine.verify_period(conn, frm, to, bundle)
+            # 「実際にオカルト買い目を買い続けたら」のリアル回収率(¥100/点)。
+            res["tickets"] = are_engine.backtest_tickets(conn, frm, to, bundle)
         return _json_response(self, 200, res)
 
     def _api_results(self, q):
