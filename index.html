@@ -21,6 +21,9 @@
   --warn: #d29922;
   --bad: #f85149;
   --pink: #e879b9;
+  --manshu: #f85149;
+  --yaya: #d29922;
+  --kata: #8b949e;
 }
 * { box-sizing: border-box; }
 body {
@@ -85,6 +88,10 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th { background: var(--bg3); padding: 8px; text-align: left; border-bottom: 1px solid var(--border); }
 td { padding: 8px; border-bottom: 1px solid var(--border); }
 tr:hover { background: var(--bg3); }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--accent); }
+th.sort-asc::after { content: ' ▲'; font-size: 10px; color: var(--accent); }
+th.sort-desc::after { content: ' ▼'; font-size: 10px; color: var(--accent); }
 
 .lane-1 { color: #fff; background: #000; }
 .lane-2 { color: #000; background: #f0f0f0; }
@@ -97,18 +104,6 @@ tr:hover { background: var(--bg3); }
   text-align: center; border-radius: 50%; font-weight: 700; font-size: 12px;
 }
 
-.race-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px;
-}
-.race-tile {
-  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
-  padding: 12px; cursor: pointer; transition: all 0.15s;
-}
-.race-tile:hover { border-color: var(--accent); }
-.race-tile h3 { margin: 0 0 4px; font-size: 14px; }
-.race-tile .meta { color: var(--text-dim); font-size: 11px; }
-.race-tile .fire { color: var(--pink); font-weight: 600; }
-
 .badge {
   display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 11px;
   margin-right: 4px;
@@ -117,6 +112,9 @@ tr:hover { background: var(--bg3); }
 .badge.bad { background: var(--bad); color: #fff; }
 .badge.warn { background: var(--warn); color: #fff; }
 .badge.dim { background: var(--bg3); color: var(--text-dim); border: 1px solid var(--border); }
+.badge.manshu { background: var(--manshu); color: #fff; font-weight: 700; }
+.badge.yaya { background: var(--yaya); color: #fff; font-weight: 700; }
+.badge.kata { background: var(--bg3); color: var(--kata); border: 1px solid var(--border); }
 
 pre.log {
   background: #000; color: #0f0; padding: 12px; border-radius: 4px;
@@ -138,112 +136,132 @@ pre.log {
 .error { color: var(--bad); }
 .muted { color: var(--text-dim); }
 .flex { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.wl-alive { color: var(--good); font-weight: 700; }
-.wl-watch { color: var(--warn); font-weight: 700; }
-.wl-dead { color: var(--text-dim); }
+
+/* 荒れアラート cards */
+.are-race-card {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+  margin-bottom: 10px; overflow: hidden;
+}
+.are-race-header {
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  cursor: pointer; user-select: none;
+}
+.are-race-header:hover { background: var(--bg2); }
+.are-score {
+  font-size: 22px; font-weight: 700; min-width: 40px; text-align: right;
+}
+.are-title { flex: 1; }
+.are-title .venue-r { font-weight: 600; font-size: 15px; }
+.are-title .race-title { color: var(--text-dim); font-size: 11px; }
+.are-fired-count { color: var(--text-dim); font-size: 12px; }
+.are-expand-icon { color: var(--text-dim); font-size: 12px; transition: transform 0.15s; }
+.are-expand-icon.open { transform: rotate(90deg); }
+.are-detail {
+  display: none; padding: 0 14px 12px;
+  border-top: 1px solid var(--border);
+}
+.are-detail.open { display: block; }
+.fired-item {
+  padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.fired-item:last-child { border-bottom: none; }
+.fired-item .fired-desc { font-weight: 500; margin-bottom: 4px; }
+.fired-meta { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; color: var(--text-dim); }
+.fired-meta span b { color: var(--text); }
+
+/* 条件タブ */
+.conditions-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;
+  margin-bottom: 16px;
+}
+.chip {
+  display: inline-block; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 12px; padding: 2px 8px; font-size: 11px; color: var(--text-dim);
+  margin: 2px;
+}
+.chip b { color: var(--text); }
+.common-section { margin-bottom: 8px; }
+.common-label { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; font-weight: 600; }
+
+/* 照合タブ */
+.verify-summary {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px;
+  margin-bottom: 16px;
+}
+.verify-kpi {
+  background: var(--bg3); border-radius: 6px; padding: 12px 14px;
+}
+.verify-kpi .val { font-size: 20px; font-weight: 700; }
+.verify-kpi .lbl { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+.verify-kpi .sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.roi-note {
+  border: 1px solid var(--border); border-left: 3px solid var(--warn);
+  background: rgba(210,153,34,.07); border-radius: 4px;
+  padding: 8px 12px; font-size: 12px; color: var(--text-dim);
+  margin-top: 12px;
+}
 </style>
 </head>
 <body>
 
 <header>
-  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v3.0</span></h1>
+  <h1>競艇サイン<span class="pink">マイナー</span> <span style="font-size:11px;color:var(--text-dim);font-weight:400">v4.0</span></h1>
   <div class="stats" id="stats">
     <div>レース <b id="s-races">-</b></div>
-    <div>結果 <b id="s-results">-</b></div>
-    <div>サイン <b id="s-signs">-</b></div>
+    <div>女子戦 <b id="s-ladies">-</b></div>
     <div>期間 <b id="s-range">-</b></div>
   </div>
   <button class="ghost" onclick="refreshStats()">↻</button>
 </header>
 
 <nav class="tabs">
-  <button data-tab="today" class="active">今日のレース</button>
-  <button data-tab="results">結果一覧</button>
-  <button data-tab="racers">注目選手</button>
-  <button data-tab="signs">サイン一覧</button>
-  <button data-tab="watchlist">ウォッチリスト</button>
+  <button data-tab="alert" class="active">荒れアラート</button>
+  <button data-tab="conditions">荒れ条件・型</button>
+  <button data-tab="verify">結果照合・回収率</button>
   <button data-tab="race">レース詳細</button>
   <button data-tab="collect">データ収集</button>
-  <button data-tab="mine">マイニング</button>
-  <button data-tab="backtest">バックテスト</button>
-  <button data-tab="integrity">整合性チェック</button>
 </nav>
 
 <main>
 
-<!-- 今日のレース -->
-<section id="tab-today" class="active">
+<!-- 荒れアラート -->
+<section id="tab-alert" class="active">
   <div class="card">
-    <div class="flex" style="justify-content:space-between">
-      <h2>女子戦レース</h2>
+    <div class="flex" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">荒れアラート</h2>
       <div class="flex">
         <label>日付</label>
-        <input type="date" id="today-date">
-        <button class="primary" onclick="loadDay()">表示</button>
+        <input type="text" id="alert-date" placeholder="YYYYMMDD" style="width:110px">
+        <button class="primary" onclick="loadAlert()">判定</button>
       </div>
     </div>
-    <div id="today-list" class="race-grid"></div>
+    <p class="muted" style="margin:8px 0 0;font-size:12px">万舟警報(赤) = 3連単 ¥10,000以上の荒れ期待 / やや荒れ(橙) = ¥5,000以上 / 堅め(灰) = 通常</p>
+  </div>
+  <div id="alert-list"></div>
+</section>
+
+<!-- 荒れ条件・型 -->
+<section id="tab-conditions">
+  <div id="conditions-content">
+    <p class="muted">タブを開くと自動で読み込みます。</p>
   </div>
 </section>
 
-<!-- 結果一覧 -->
-<section id="tab-results">
+<!-- 結果照合・回収率 -->
+<section id="tab-verify">
   <div class="card">
-    <h2>レース結果一覧</h2>
-    <div class="flex" style="margin-bottom:12px">
-      <label>日付</label><input id="res-date" type="date">
-      <button class="primary" onclick="loadResults()">表示</button>
-      <button class="ghost" onclick="loadResults(true)">最近60件</button>
+    <div class="flex" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0">結果照合・回収率</h2>
+      <div class="flex">
+        <label>から</label>
+        <input type="text" id="verify-from" placeholder="YYYYMMDD" style="width:110px">
+        <label>まで</label>
+        <input type="text" id="verify-to" placeholder="YYYYMMDD" style="width:110px">
+        <button class="primary" onclick="loadVerify()">照合</button>
+      </div>
     </div>
-    <div id="results-list"></div>
   </div>
-</section>
-
-<!-- 注目選手 -->
-<section id="tab-racers">
-  <div class="card">
-    <h2>注目選手 サイン大捜索</h2>
-    <p class="muted">個人はデータが少ないので緩い閾値（発火≧3回・的中率≧60%）で候補を広く洗い出します。
-      条件コース別に「どの艇が1着になりやすいか／どの艇ペアが3着以内に来やすいか」を表示。行をタップで事例（3連単配当付き）。</p>
-    <div class="flex" style="margin-bottom:12px">
-      <button class="primary" onclick="loadRacer('5156')">坂野さくら (5156)</button>
-      <button class="primary" onclick="loadRacer('5310')">土屋蘭 (5310)</button>
-      <button class="primary" onclick="loadRacer('5174')">川井萌 (5174)</button>
-    </div>
-    <div id="racer-result"></div>
-  </div>
-</section>
-
-<!-- サイン一覧 -->
-<section id="tab-signs">
-  <div class="card">
-    <h2>抽出済みサイン</h2>
-    <div class="flex" style="margin-bottom:12px">
-      <label>種別</label>
-      <select id="sign-kind">
-        <option value="">すべて</option>
-        <option value="top3_pair">3着以内ペア</option>
-        <option value="win">1着</option>
-      </select>
-      <label>表示</label>
-      <select id="sign-limit"><option>50</option><option>100</option><option>200</option><option>500</option></select>
-      <button class="primary" onclick="loadSigns()">読み込み</button>
-    </div>
-    <div id="signs-list"></div>
-  </div>
-</section>
-
-<!-- ウォッチリスト（オカルト/異常値サイン 生存追跡） -->
-<section id="tab-watchlist">
-  <div class="card">
-    <h2>オカルト/異常値サイン 生存追跡</h2>
-    <p class="muted">「この条件が揃うと、なぜかこの2艇が3着以内に来る」という複合サインを登録し、データが増えても生き残るかを追跡します。
-      <b>異常値</b>＝的中率系（生存≥80%）／<b>異常lift</b>＝レアペア倍率系（通常比≥2.0倍で生存）。統計的検証なしの生の共起なので、伸びても淘汰されても記録が真実です。</p>
-    <div class="flex" style="margin-bottom:12px">
-      <button class="primary" onclick="loadWatchlist()">最新データで再計算</button>
-    </div>
-    <div id="watchlist-list"><p class="muted">タブを開くと自動で再計算します。</p></div>
-  </div>
+  <div id="verify-content"></div>
 </section>
 
 <!-- レース詳細 -->
@@ -282,49 +300,6 @@ pre.log {
   </div>
 </section>
 
-<!-- マイニング -->
-<section id="tab-mine">
-  <div class="card">
-    <h2>サインマイニング</h2>
-    <p class="muted">DBの全データから「選手X@N号艇 → M号艇とP号艇が3着以内」型のサインを抽出します。</p>
-    <div class="flex" style="margin-bottom:12px">
-      <label>最低発火回数</label><input id="m-sup" type="number" value="10" style="width:80px">
-      <label>的中率</label><input id="m-conf" type="number" value="0.80" step="0.05" style="width:80px">
-      <label>リフト</label><input id="m-lift" type="number" value="1.5" step="0.1" style="width:80px">
-      <label>p値</label><input id="m-p" type="number" value="0.05" step="0.01" style="width:80px">
-      <button class="primary" onclick="runMine()">マイニング実行</button>
-    </div>
-    <div id="mine-result"></div>
-  </div>
-</section>
-
-<!-- バックテスト -->
-<section id="tab-backtest">
-  <div class="card">
-    <h2>バックテスト</h2>
-    <p class="muted">学習期間で抽出したサインを、テスト期間に当てはめて的中率・回収率を測定します。</p>
-    <div class="flex" style="margin-bottom:12px">
-      <label>学習開始</label><input id="bt-train-from" type="date">
-      <label>学習終了</label><input id="bt-train-to" type="date">
-      <label>テスト開始</label><input id="bt-test-from" type="date">
-      <label>テスト終了</label><input id="bt-test-to" type="date">
-      <button class="primary" onclick="runBacktest()">実行</button>
-    </div>
-    <div id="bt-result"></div>
-  </div>
-</section>
-
-<!-- 整合性 -->
-<section id="tab-integrity">
-  <div class="card">
-    <h2>データ整合性チェック</h2>
-    <div class="flex" style="margin-bottom:12px">
-      <button class="primary" onclick="runIntegrity()">チェック実行</button>
-    </div>
-    <div id="integrity-result"></div>
-  </div>
-</section>
-
 </main>
 
 <script>
@@ -335,334 +310,468 @@ const VENUES = {
   "19":"下関","20":"若松","21":"芦屋","22":"福岡","23":"唐津","24":"大村"
 };
 
-// タブ切替
+// ---- ユーティリティ ----
+function ymd(d) {
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function ymd8(d) {
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}${m}${day}`;
+}
+function stripHyphen(s) { return (s || '').replace(/-/g, ''); }
+function fmtYen(n) {
+  if (n == null) return '-';
+  return '¥' + Number(n).toLocaleString('ja-JP');
+}
+function fmtPct(v) {
+  if (v == null) return '-';
+  return (v * 100).toFixed(1) + '%';
+}
+function fmtLift(v) {
+  if (v == null) return '-';
+  return '×' + Number(v).toFixed(1);
+}
+
+// ---- API BASE ----
+const API_BASE = (() => {
+  const h = location.hostname;
+  if (h.endsWith('github.io') || h.includes('vercel') || h.includes('netlify')) {
+    return 'https://kyotei-sign.onrender.com';
+  }
+  return '';
+})();
+
+async function api(path, opts) {
+  const r = await fetch(API_BASE + path, opts || {});
+  if (!r.ok) throw new Error(`${path}: ${r.status}`);
+  return r.json();
+}
+
+// ---- 日付の初期値 ----
+const today = new Date();
+const todayStr8 = ymd8(today);
+const todayStrHyphen = ymd(today);
+
+document.getElementById('alert-date').value = todayStr8;
+document.getElementById('r-date').value = todayStrHyphen;
+
+const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth() - 1);
+document.getElementById('c-end').value = todayStrHyphen;
+document.getElementById('c-start').value = ymd(monthAgo);
+
+const threeMonthsAgo = new Date(); threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+document.getElementById('verify-from').value = ymd8(threeMonthsAgo);
+document.getElementById('verify-to').value = todayStr8;
+
+// ---- 会場プルダウン ----
+const rJcdSel = document.getElementById('r-jcd');
+Object.entries(VENUES).forEach(([k, v]) => {
+  const o = document.createElement('option');
+  o.value = k;
+  o.textContent = `${k} ${v}`;
+  rJcdSel.appendChild(o);
+});
+
+// ---- タブ切替 ----
+let _conditionsLoaded = false;
 document.querySelectorAll('nav.tabs button').forEach(b => {
   b.addEventListener('click', () => {
     document.querySelectorAll('nav.tabs button').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
     document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
     document.getElementById('tab-' + b.dataset.tab).classList.add('active');
-    if (b.dataset.tab === 'watchlist' && !_wlLoaded) loadWatchlist();
+    if (b.dataset.tab === 'conditions' && !_conditionsLoaded) {
+      loadConditions();
+    }
   });
 });
 
-// 会場プルダウン
-const rJcdSel = document.getElementById('r-jcd');
-Object.entries(VENUES).forEach(([k, v]) => {
-  const o = document.createElement('option'); o.value = k; o.textContent = `${k} ${v}`;
-  rJcdSel.appendChild(o);
-});
-
-// 初期日付
-function ymd(d) {
-  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${day}`;
-}
-function ymd_nohyphen(s) { return s.replace(/-/g, ''); }
-const today = new Date();
-['today-date', 'r-date'].forEach(id => { document.getElementById(id).value = ymd(today); });
-const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth()-1);
-document.getElementById('c-end').value = ymd(today);
-document.getElementById('c-start').value = ymd(monthAgo);
-const sixMo = new Date(); sixMo.setMonth(sixMo.getMonth()-6);
-document.getElementById('bt-train-from').value = ymd(sixMo);
-const threeMoAgo = new Date(); threeMoAgo.setMonth(threeMoAgo.getMonth()-3);
-document.getElementById('bt-train-to').value = ymd(threeMoAgo);
-document.getElementById('bt-test-from').value = ymd(threeMoAgo);
-document.getElementById('bt-test-to').value = ymd(today);
-
-// API helpers — GitHub Pages からは Render の API を呼ぶ
-const API_BASE = (() => {
-  const h = location.hostname;
-  if (h.endsWith('github.io') || h.includes('vercel') || h.includes('netlify')) {
-    return 'https://kyotei-sign.onrender.com';
-  }
-  return '';  // 同一オリジン
-})();
-async function api(path, opts={}) {
-  const r = await fetch(API_BASE + path, opts);
-  if (!r.ok) throw new Error(`${path}: ${r.status}`);
-  return r.json();
-}
-
+// ---- ヘッダー統計 ----
 async function refreshStats() {
   try {
     const s = await api('/api/stats');
-    document.getElementById('s-races').textContent = s.races;
-    document.getElementById('s-results').textContent = s.race_results;
-    document.getElementById('s-signs').textContent = s.signs;
-    if (s.date_range[0]) {
+    document.getElementById('s-races').textContent = s.races != null ? s.races : '-';
+    document.getElementById('s-ladies').textContent = s.ladies_races != null ? s.ladies_races : '-';
+    if (s.date_range && s.date_range[0]) {
       document.getElementById('s-range').textContent = `${s.date_range[0]}〜${s.date_range[1]}`;
-      // 結果一覧の日付を最新データ日に初期化
-      const mx = s.date_range[1], rd = document.getElementById('res-date');
-      if (mx && rd && !rd.value) rd.value = `${mx.slice(0,4)}-${mx.slice(4,6)}-${mx.slice(6)}`;
     }
-  } catch (e) { console.error(e); }
+  } catch (e) { console.error('stats:', e); }
 }
 
-// 結果一覧
-async function loadResults(recent) {
-  const wrap = document.getElementById('results-list');
-  wrap.innerHTML = '<p class="muted">読み込み中...</p>';
-  let path = '/api/results';
-  if (!recent) {
-    const d = ymd_nohyphen(document.getElementById('res-date').value);
-    if (d) path += '?date=' + d;
-  }
-  try {
-    const d = await api(path);
-    if (!d.results.length) {
-      wrap.innerHTML = '<p class="muted">この条件の結果はありません（日付を変えるか「最近60件」を押してください）。</p>';
-      return;
-    }
-    let html = `<div class="muted" style="margin-bottom:8px">${d.count}件</div>`;
-    html += '<table><thead><tr><th>日付</th><th>会場</th><th>R</th><th>1着</th><th>2着</th><th>3着</th><th>決まり手</th><th>3連単</th><th>3連複</th></tr></thead><tbody>';
-    for (const r of d.results) {
-      const cell = (i) => r.finish[i] ? `<span class="lane lane-${r.finish[i][1]}">${r.finish[i][1]}</span>` : '-';
-      const dt = `${r.date.slice(4,6)}/${r.date.slice(6)}`;
-      const t3 = r.payout_3t_yen ? `<span class="muted">${r.payout_3t||''}</span> <b>¥${Number(r.payout_3t_yen).toLocaleString()}</b>` : '-';
-      const f3 = r.payout_3f_yen ? `<span class="muted">${r.payout_3f||''}</span> ¥${Number(r.payout_3f_yen).toLocaleString()}` : '-';
-      html += `<tr><td>${dt}</td><td><b>${r.venue}</b></td><td>${r.rno}R</td><td>${cell(0)}</td><td>${cell(1)}</td><td>${cell(2)}</td><td>${r.determinant||'-'}</td><td>${t3}</td><td>${f3}</td></tr>`;
-    }
-    html += '</tbody></table>';
-    wrap.innerHTML = html;
-  } catch (e) {
-    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
-  }
+// ---- 荒れ度バッジ ----
+function levelBadge(level) {
+  if (!level) return '';
+  if (level === '万舟警報') return '<span class="badge manshu">万舟警報</span>';
+  if (level === 'やや荒れ') return '<span class="badge yaya">やや荒れ</span>';
+  return '<span class="badge kata">堅め</span>';
+}
+function scoreColor(level) {
+  if (level === '万舟警報') return 'var(--manshu)';
+  if (level === 'やや荒れ') return 'var(--yaya)';
+  return 'var(--kata)';
 }
 
-// ウォッチリスト（オカルト/異常値サイン 生存追跡）
-let _wlLoaded = false;
-async function loadWatchlist() {
-  const wrap = document.getElementById('watchlist-list');
-  wrap.innerHTML = '<p class="muted">再計算中...（全女子戦レースを走査）</p>';
-  try {
-    const d = await api('/api/watchlist');
-    _wlLoaded = true;
-    const vClass = (v) => v === '生存' ? 'wl-alive' : (v === '黄信号' ? 'wl-watch' : 'wl-dead');
-    const counts = { '生存': 0, '黄信号': 0, '淘汰': 0 };
-    d.rows.forEach(r => counts[r.verdict]++);
-    const order = { '生存': 0, '黄信号': 1, '淘汰': 2 };
-    const rows = d.rows.slice().sort((a, b) => (order[a.verdict] - order[b.verdict]) || (b.lift - a.lift));
-    let html = `<div class="muted" style="margin-bottom:8px">対象 ${d.total_races} レース ・ 記録日 ${d.recorded_at} ・ `
-      + `<span class="wl-alive">生存 ${counts['生存']}</span> / <span class="wl-watch">黄信号 ${counts['黄信号']}</span> / <span class="wl-dead">淘汰 ${counts['淘汰']}</span></div>`;
-    html += '<table><thead><tr><th>判定</th><th>種別</th><th>条件(AND)</th><th>ペア</th><th>基準</th><th>現在</th><th>伸</th><th>的中率</th><th>倍率</th></tr></thead><tbody>';
-    for (const r of rows) {
-      const pa = `<span class="lane lane-${r.pair[0]}">${r.pair[0]}</span> <span class="lane lane-${r.pair[1]}">${r.pair[1]}</span>`;
-      const grow = r.growth > 0 ? `+${r.growth}` : `${r.growth}`;
-      html += `<tr>
-        <td><span class="${vClass(r.verdict)}">${r.verdict}</span></td>
-        <td><span class="muted">${r.dim}</span></td>
-        <td>${r.desc}</td>
-        <td>${pa}</td>
-        <td class="muted">${r.base_hits}/${r.base_support}</td>
-        <td><b>${r.hits}/${r.support}</b></td>
-        <td class="muted">${grow}</td>
-        <td>${(r.rate * 100).toFixed(0)}%</td>
-        <td>${r.lift.toFixed(1)}倍</td>
-      </tr>`;
-    }
-    html += '</tbody></table>';
-    wrap.innerHTML = html;
-  } catch (e) {
-    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
-  }
-}
-
-// 今日の表示
-async function loadDay() {
-  const date = ymd_nohyphen(document.getElementById('today-date').value);
-  const list = document.getElementById('today-list');
+// ---- 荒れアラート ----
+async function loadAlert() {
+  const dateVal = (document.getElementById('alert-date').value || '').trim() || todayStr8;
+  const list = document.getElementById('alert-list');
   list.innerHTML = '<p class="muted">読み込み中...</p>';
   try {
-    const d = await api('/api/day?date=' + date);
-    if (!d.ladies_venues.length) {
-      list.innerHTML = '<p class="muted">この日の女子戦はありません</p>';
+    const d = await api('/api/are/today?date=' + dateVal);
+    const races = Array.isArray(d.races) ? d.races : [];
+    if (!races.length) {
+      list.innerHTML = '<div class="card"><p class="muted">この日の荒れ候補レースはありません。</p></div>';
       return;
     }
     list.innerHTML = '';
-    for (const v of d.ladies_venues) {
-      for (let rno = 1; rno <= 12; rno++) {
-        const tile = document.createElement('div');
-        tile.className = 'race-tile';
-        tile.innerHTML = `
-          <h3>${v.venue} ${rno}R</h3>
-          <div class="meta">${v.title}</div>
-          <div class="meta">jcd=${v.jcd}</div>
-          <div id="fire-${v.jcd}-${rno}" class="fire muted">読込中...</div>
-        `;
-        tile.onclick = () => {
+    races.forEach((race, idx) => {
+      const card = document.createElement('div');
+      card.className = 'are-race-card';
+
+      const header = document.createElement('div');
+      header.className = 'are-race-header';
+
+      const score = Number(race.are_score || 0).toFixed(1);
+      const nFired = race.n_fired != null ? race.n_fired : (Array.isArray(race.fired) ? race.fired.length : 0);
+
+      header.innerHTML = `
+        <div class="are-score" style="color:${scoreColor(race.level)}">${score}</div>
+        <div class="are-title">
+          ${levelBadge(race.level)}
+          <div class="venue-r">${race.venue || ''} ${race.rno != null ? race.rno + 'R' : ''}</div>
+          <div class="race-title">${race.title || ''}</div>
+        </div>
+        <div class="are-fired-count">${nFired}条件発火</div>
+        <div class="are-expand-icon" id="icon-${idx}">▶</div>
+      `;
+
+      const detail = document.createElement('div');
+      detail.className = 'are-detail';
+      detail.id = 'are-detail-' + idx;
+
+      const fired = Array.isArray(race.fired) ? race.fired : [];
+      if (!fired.length) {
+        detail.innerHTML = '<p class="muted" style="padding:8px 0">発火条件なし</p>';
+      } else {
+        detail.innerHTML = fired.map(f => {
+          const confPct = f.conf != null ? (f.conf * 100).toFixed(1) + '%' : '-';
+          const liftStr = f.lift != null ? '×' + Number(f.lift).toFixed(1) : '-';
+          const softStr = f.soft_rate != null ? (f.soft_rate * 100).toFixed(0) + '%' : '-';
+          const expStr = f.expect_index != null ? fmtYen(f.expect_index) : '-';
+          const supStr = f.support != null ? f.support : '-';
+          return `<div class="fired-item">
+            <div class="fired-desc">${f.desc || ''}</div>
+            <div class="fired-meta">
+              <span>万舟率 <b>${confPct}</b></span>
+              <span>lift <b>${liftStr}</b></span>
+              <span>soft率 <b>${softStr}</b></span>
+              <span>期待配当指数 <b>${expStr}</b></span>
+              <span>発火 <b>${supStr}</b></span>
+            </div>
+          </div>`;
+        }).join('');
+      }
+
+      card.appendChild(header);
+      card.appendChild(detail);
+
+      // クリックで展開 + レース詳細へジャンプ
+      header.addEventListener('click', () => {
+        const isOpen = detail.classList.contains('open');
+        detail.classList.toggle('open', !isOpen);
+        document.getElementById('icon-' + idx).classList.toggle('open', !isOpen);
+        // レース詳細タブも開く
+        if (race.jcd && race.rno && (d.date || dateVal)) {
+          const raceDate = (d.date || dateVal).replace(/-/g, '');
+          const hyphenDate = raceDate.length === 8
+            ? `${raceDate.slice(0,4)}-${raceDate.slice(4,6)}-${raceDate.slice(6)}`
+            : raceDate;
+          document.getElementById('r-date').value = hyphenDate;
+          document.getElementById('r-jcd').value = String(race.jcd).padStart(2, '0');
+          document.getElementById('r-rno').value = race.rno;
           document.querySelector('nav.tabs button[data-tab=race]').click();
-          document.getElementById('r-date').value = document.getElementById('today-date').value;
-          document.getElementById('r-jcd').value = v.jcd;
-          document.getElementById('r-rno').value = rno;
           loadRace();
-        };
-        list.appendChild(tile);
-        // 発火サイン取得（非同期）
-        fetch(`/api/race?date=${date}&jcd=${v.jcd}&rno=${rno}`)
-          .then(r => r.json())
-          .then(j => {
-            const el = document.getElementById(`fire-${v.jcd}-${rno}`);
-            if (j.fires && j.fires.length) {
-              el.textContent = `🔥 サイン ${j.fires.length} 発火`;
-              el.className = 'fire';
-            } else {
-              el.textContent = 'サイン無し';
-              el.className = 'muted';
-            }
-          })
-          .catch(() => {});
-      }
+        }
+      });
+
+      list.appendChild(card);
+    });
+
+    if (d.note) {
+      const note = document.createElement('p');
+      note.className = 'muted';
+      note.style.fontSize = '11px';
+      note.textContent = d.note;
+      list.appendChild(note);
     }
   } catch (e) {
-    list.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
+    list.innerHTML = `<div class="card"><p class="error">エラー: ${e.message}</p></div>`;
   }
 }
 
-// サイン一覧
-async function loadSigns() {
-  const kind = document.getElementById('sign-kind').value;
-  const limit = document.getElementById('sign-limit').value;
-  const wrap = document.getElementById('signs-list');
+// ---- 荒れ条件・型 ----
+async function loadConditions() {
+  const wrap = document.getElementById('conditions-content');
   wrap.innerHTML = '<p class="muted">読み込み中...</p>';
   try {
-    const d = await api(`/api/signs?kind=${kind}&limit=${limit}`);
-    if (!d.signs.length) {
-      wrap.innerHTML = '<p class="muted">サインがありません。<br>「マイニング」タブで実行してください。</p>';
-      return;
+    const d = await api('/api/are/conditions');
+    _conditionsLoaded = true;
+    let html = '';
+
+    // ベースレート
+    const base = d.base || {};
+    html += `<div class="card">
+      <h2>ベースレート</h2>
+      <div class="kpi">
+        <div><b style="color:var(--manshu)">${fmtPct(base.manshu_rate)}</b><span>万舟ベース率</span></div>
+        <div><b style="color:var(--yaya)">${fmtPct(base.soft_rate)}</b><span>やや荒れベース率</span></div>
+        <div><b>${base.n != null ? Number(base.n).toLocaleString('ja-JP') : '-'}</b><span>総レース数</span></div>
+        <div><b>${base.avg_pay_manshu != null ? fmtYen(base.avg_pay_manshu) : '-'}</b><span>平均万舟配当</span></div>
+      </div>
+    </div>`;
+
+    // 3パネル
+    html += '<div class="conditions-grid">';
+
+    // 荒れ常連ランキング
+    const regulars = Array.isArray(d.regulars) ? d.regulars : [];
+    html += '<div class="card" style="overflow-x:auto"><h2>荒れ常連ランキング</h2>';
+    if (regulars.length) {
+      html += '<table><thead><tr><th>選手</th><th>発火</th><th>万舟率</th><th>lift</th><th>soft率</th><th>平均万舟配当</th></tr></thead><tbody>';
+      regulars.forEach(r => {
+        html += `<tr>
+          <td><b>${r.name || ''}</b></td>
+          <td>${r.support != null ? r.support : '-'}</td>
+          <td><b style="color:var(--manshu)">${r.conf != null ? (r.conf*100).toFixed(1) + '%' : '-'}</b></td>
+          <td style="color:var(--warn)">${fmtLift(r.lift)}</td>
+          <td>${r.soft_rate != null ? (r.soft_rate*100).toFixed(0) + '%' : '-'}</td>
+          <td>${r.avg_pay_manshu != null ? fmtYen(r.avg_pay_manshu) : '-'}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+    } else {
+      html += '<p class="muted">データなし</p>';
     }
-    let html = `<div class="muted" style="margin-bottom:8px">${d.count}件（行をタップで事例を表示）</div>`;
-    html += '<table><thead><tr><th></th><th>選手</th><th>条件</th><th>結果</th><th>種別</th><th>発火</th><th>的中</th><th>的中率</th><th>リフト</th></tr></thead><tbody>';
-    d.signs.forEach((s, i) => {
-      html += `<tr style="cursor:pointer" onclick="toggleSignDetail(${i})">
-        <td class="muted">▶</td>
-        <td><b>${s.racer_name||''}</b><br><span class="muted" style="font-size:11px">${s.toban}</span></td>
-        <td><span class="lane lane-${s.cond_lane}">${s.cond_lane}</span></td>
-        <td>${formatTarget(s)}</td>
-        <td>${s.target_kind==='top3_pair'?'3着以内':'1着'}</td>
-        <td>${s.support}</td>
-        <td>${s.hits}</td>
-        <td><b style="color:var(--good)">${(s.confidence*100).toFixed(1)}%</b></td>
-        <td style="color:var(--warn)">${s.lift?.toFixed(2)}</td>
-      </tr>
-      <tr id="sd-${i}" style="display:none"><td colspan="9" style="background:var(--bg)"><div id="sd-body-${i}" class="muted">読み込み中...</div></td></tr>`;
-    });
-    html += '</tbody></table>';
-    window._signs = d.signs;
-    wrap.innerHTML = html;
-  } catch (e) {
-    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
-  }
-}
-async function toggleSignDetail(i) {
-  const row = document.getElementById('sd-' + i);
-  const body = document.getElementById('sd-body-' + i);
-  if (row.style.display === 'none') {
-    row.style.display = '';
-    const s = window._signs[i];
-    try {
-      const d = await api(`/api/sign_detail?toban=${encodeURIComponent(s.toban)}&lane=${s.cond_lane}&target=${encodeURIComponent(s.target_pair)}&kind=${s.target_kind}`);
-      let h = `<div style="margin:8px 0"><b>${s.racer_name}が${s.cond_lane}号艇に乗ったレース ${d.count}件中 ${d.hits}件的中</b></div>`;
-      h += '<table style="font-size:12px"><thead><tr><th>判定</th><th>日付</th><th>競艇場</th><th>R</th><th>着順(上位3)</th><th>3連単配当</th></tr></thead><tbody>';
-      for (const ins of d.instances) {
-        const fin = ins.finish.map(f => f[1]).join('-');
-        const mark = ins.hit ? '<span style="color:var(--good)">◎的中</span>' : '<span style="color:var(--bad)">✗外</span>';
-        const dt = `${ins.date.slice(0,4)}/${ins.date.slice(4,6)}/${ins.date.slice(6)}`;
-        const pay3t = ins.payout_3t_yen
-          ? `<span class="muted">${ins.payout_3t||''}</span> <b>¥${Number(ins.payout_3t_yen).toLocaleString()}</b>`
-          : '<span class="muted">-</span>';
-        h += `<tr><td>${mark}</td><td>${dt}</td><td><b>${ins.venue}</b></td><td>${ins.rno}R</td><td>${fin}</td><td>${pay3t}</td></tr>`;
+    html += '</div>';
+
+    // 3号艇の荒らし役
+    const arashi = Array.isArray(d.arashi_lane3) ? d.arashi_lane3 : [];
+    html += '<div class="card" style="overflow-x:auto"><h2>3号艇の荒らし役</h2>';
+    if (arashi.length) {
+      html += '<table><thead><tr><th>選手</th><th>発火</th><th>万舟率</th><th>lift</th><th>平均万舟配当</th></tr></thead><tbody>';
+      arashi.forEach(r => {
+        html += `<tr>
+          <td><b>${r.name || ''}</b></td>
+          <td>${r.support != null ? r.support : '-'}</td>
+          <td><b style="color:var(--manshu)">${r.conf != null ? (r.conf*100).toFixed(1) + '%' : '-'}</b></td>
+          <td style="color:var(--warn)">${fmtLift(r.lift)}</td>
+          <td>${r.avg_pay_manshu != null ? fmtYen(r.avg_pay_manshu) : '-'}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+    } else {
+      html += '<p class="muted">データなし</p>';
+    }
+    html += '</div>';
+
+    // 荒れ水面ランキング
+    const venues = Array.isArray(d.venues) ? d.venues : [];
+    html += '<div class="card" style="overflow-x:auto"><h2>荒れ水面ランキング</h2>';
+    if (venues.length) {
+      html += '<table><thead><tr><th>会場</th><th>レース数</th><th>万舟率</th><th>soft率</th><th>lift</th><th>平均万舟配当</th></tr></thead><tbody>';
+      venues.forEach(r => {
+        html += `<tr>
+          <td><b>${r.venue || ''}</b></td>
+          <td>${r.support != null ? r.support : '-'}</td>
+          <td><b style="color:var(--manshu)">${r.conf != null ? (r.conf*100).toFixed(1) + '%' : '-'}</b></td>
+          <td>${r.soft_rate != null ? (r.soft_rate*100).toFixed(0) + '%' : '-'}</td>
+          <td style="color:var(--warn)">${fmtLift(r.lift)}</td>
+          <td>${r.avg_pay_manshu != null ? fmtYen(r.avg_pay_manshu) : '-'}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+    } else {
+      html += '<p class="muted">データなし</p>';
+    }
+    html += '</div>';
+
+    html += '</div>'; // end conditions-grid
+
+    // 共通項サマリ
+    const common = d.common || {};
+    const COMMON_LABELS = {
+      racer: '選手', racer_lane: '選手×コース', venue: '会場', lane: 'コース',
+      motor_last: 'モーター末尾', toban_last: '登番末尾', kanji: '漢字パターン', types: '条件種別'
+    };
+    const commonEntries = Object.entries(common).filter(([, arr]) => Array.isArray(arr) && arr.length > 0);
+    if (commonEntries.length) {
+      html += '<div class="card"><h2>共通項サマリ</h2>';
+      for (const [key, items] of commonEntries) {
+        const label = COMMON_LABELS[key] || key;
+        html += `<div class="common-section">
+          <div class="common-label">${label}</div>
+          <div>`;
+        for (const [name, count] of items) {
+          html += `<span class="chip">${name} <b>×${count}</b></span>`;
+        }
+        html += '</div></div>';
       }
-      h += '</tbody></table>';
-      body.innerHTML = h;
-    } catch (e) {
-      body.innerHTML = `<span class="error">${e.message}</span>`;
+      html += '</div>';
     }
-  } else {
-    row.style.display = 'none';
+
+    // 全条件テーブル（ソート可能）
+    const conditions = Array.isArray(d.conditions) ? d.conditions : [];
+    if (conditions.length) {
+      html += `<div class="card" id="cond-table-card"><h2>全条件テーブル <span class="muted" style="font-size:12px;font-weight:400">${conditions.length}件</span></h2>
+        <div style="overflow-x:auto">
+          <table id="cond-table">
+            <thead><tr>
+              <th class="sortable" data-col="support" data-dir="desc">万舟数/発火</th>
+              <th class="sortable" data-col="conf" data-dir="desc">率</th>
+              <th class="sortable" data-col="lift" data-dir="desc">lift</th>
+              <th class="sortable" data-col="soft_rate" data-dir="desc">soft率</th>
+              <th class="sortable" data-col="avg_pay_manshu" data-dir="desc">平均万舟配当</th>
+              <th class="sortable" data-col="expect_index" data-dir="desc">期待配当指数</th>
+              <th>条件</th>
+              <th>種別</th>
+            </tr></thead>
+            <tbody id="cond-tbody"></tbody>
+          </table>
+        </div>
+      </div>`;
+    }
+
+    wrap.innerHTML = html;
+
+    // 条件テーブル初期描画とソート
+    if (conditions.length) {
+      window._conditionsData = conditions;
+      renderConditionsTable('lift', 'desc');
+      setupConditionsSort();
+    }
+
+  } catch (e) {
+    wrap.innerHTML = `<div class="card"><p class="error">エラー: ${e.message}</p></div>`;
   }
-}
-function formatTarget(s) {
-  if (s.target_kind === 'top3_pair') {
-    const [a, b] = s.target_pair.split('-');
-    return `<span class="lane lane-${a}">${a}</span>+<span class="lane lane-${b}">${b}</span>`;
-  }
-  return `<span class="lane lane-${s.target_pair}">${s.target_pair}</span>`;
 }
 
-// 注目選手 大捜索
-async function loadRacer(toban) {
-  const wrap = document.getElementById('racer-result');
-  wrap.innerHTML = '<p class="muted">読み込み中...</p>';
-  try {
-    const d = await api('/api/racer_search?toban=' + encodeURIComponent(toban));
-    const lanes = Object.entries(d.lane_counts || {})
-      .map(([l, n]) => `<span class="lane lane-${l}">${l}</span>${n}走`).join(' ');
-    let html = `<div style="margin-bottom:8px"><b style="font-size:15px">${d.racer_name||''}</b>
-      <span class="muted">(${d.toban})</span>
-      <span class="muted"> 計${d.total_runs}走</span></div>`;
-    html += `<div class="muted" style="margin-bottom:10px">コース別出走数: ${lanes||'-'}</div>`;
-    if (!d.candidates || !d.candidates.length) {
-      html += '<p class="muted">候補サインが見つかりませんでした（データが少ない可能性）。</p>';
-      wrap.innerHTML = html;
-      return;
-    }
-    html += `<div class="muted" style="margin-bottom:8px">候補 ${d.candidates.length} 件（行をタップで事例を表示）。データは部分的です。</div>`;
-    html += '<table><thead><tr><th></th><th>条件コース</th><th>結果</th><th>種別</th><th>発火</th><th>的中</th><th>的中率</th><th>リフト</th></tr></thead><tbody>';
-    d.candidates.forEach((c, i) => {
-      html += `<tr style="cursor:pointer" onclick="toggleRacerDetail(${i})">
-        <td class="muted">▶</td>
-        <td><span class="lane lane-${c.cond_lane}">${c.cond_lane}</span></td>
-        <td>${formatTarget(c)}</td>
-        <td>${c.target_kind==='top3_pair'?'3着以内':'1着'}</td>
-        <td>${c.support}</td>
-        <td>${c.hits}</td>
-        <td><b style="color:var(--good)">${(c.confidence*100).toFixed(1)}%</b></td>
-        <td style="color:var(--warn)">${c.lift?.toFixed(2)}</td>
-      </tr>
-      <tr id="rd-${i}" style="display:none"><td colspan="8" style="background:var(--bg)"><div id="rd-body-${i}"></div></td></tr>`;
+function renderConditionsTable(col, dir) {
+  const rows = (window._conditionsData || []).slice();
+  rows.sort((a, b) => {
+    const av = a[col] != null ? a[col] : -Infinity;
+    const bv = b[col] != null ? b[col] : -Infinity;
+    return dir === 'desc' ? bv - av : av - bv;
+  });
+  const tbody = document.getElementById('cond-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = rows.map(c => {
+    const hitsStr = (c.hits != null ? c.hits : '-') + '/' + (c.support != null ? c.support : '-');
+    const typesStr = Array.isArray(c.types) ? c.types.join(', ') : (c.types || '-');
+    return `<tr>
+      <td>${hitsStr}</td>
+      <td><b style="color:var(--manshu)">${c.conf != null ? (c.conf*100).toFixed(1)+'%' : '-'}</b></td>
+      <td style="color:var(--warn)">${fmtLift(c.lift)}</td>
+      <td>${c.soft_rate != null ? (c.soft_rate*100).toFixed(0)+'%' : '-'}</td>
+      <td>${c.avg_pay_manshu != null ? fmtYen(c.avg_pay_manshu) : '-'}</td>
+      <td>${c.expect_index != null ? fmtYen(c.expect_index) : '-'}</td>
+      <td>${c.desc || ''}</td>
+      <td class="muted">${typesStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+function setupConditionsSort() {
+  let currentCol = 'lift';
+  let currentDir = 'desc';
+  const headers = document.querySelectorAll('#cond-table th.sortable');
+  // 初期状態でlift列にマーク
+  headers.forEach(th => {
+    if (th.dataset.col === 'lift') th.classList.add('sort-desc');
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (currentCol === col) {
+        currentDir = currentDir === 'desc' ? 'asc' : 'desc';
+      } else {
+        currentCol = col;
+        currentDir = 'desc';
+      }
+      headers.forEach(x => { x.classList.remove('sort-asc', 'sort-desc'); });
+      th.classList.add(currentDir === 'desc' ? 'sort-desc' : 'sort-asc');
+      renderConditionsTable(currentCol, currentDir);
     });
-    html += '</tbody></table>';
-    window._racerCands = d.candidates;
+  });
+}
+
+// ---- 結果照合・回収率 ----
+async function loadVerify() {
+  const fromVal = (document.getElementById('verify-from').value || '').trim();
+  const toVal = (document.getElementById('verify-to').value || '').trim();
+  const wrap = document.getElementById('verify-content');
+  wrap.innerHTML = '<p class="muted">照合中...</p>';
+  try {
+    const d = await api(`/api/are/verify?from=${fromVal}&to=${toVal}`);
+    let html = '';
+
+    const hitRate = d.hit_rate != null ? (d.hit_rate * 100).toFixed(1) + '%' : '-';
+    const baseRate = d.base_rate != null ? (d.base_rate * 100).toFixed(1) + '%' : '-';
+    const liftStr = d.lift != null ? '×' + Number(d.lift).toFixed(1) : '';
+    const softHit = d.soft_hit_rate != null ? (d.soft_hit_rate * 100).toFixed(1) + '%' : '-';
+    const approxRoi = d.approx_roi_pct != null ? Math.round(d.approx_roi_pct).toLocaleString('ja-JP') + '%' : '-';
+    const avgPay = d.avg_pay_manshu != null ? fmtYen(d.avg_pay_manshu) : '-';
+
+    html += '<div class="card"><h2>照合サマリ</h2><div class="verify-summary">';
+    html += kpiBox(d.races != null ? Number(d.races).toLocaleString('ja-JP') : '-', '対象レース');
+    html += kpiBox(d.fired_races != null ? Number(d.fired_races).toLocaleString('ja-JP') : '-', '発火レース');
+    html += kpiBox(d.manshu_in_fired != null ? Number(d.manshu_in_fired).toLocaleString('ja-JP') : '-', '万舟的中');
+    html += kpiBox(`<span style="color:var(--manshu)">${hitRate}</span>`, '発火時万舟率', `ベース ${baseRate} ${liftStr}`);
+    html += kpiBox(`<span style="color:var(--yaya)">${softHit}</span>`, 'soft的中率');
+    html += kpiBox(avgPay, '平均万舟配当');
+    html += kpiBox(`<span style="color:var(--good)">${approxRoi}</span>`, '概算回収率(目安)');
+    html += '</div>';
+
+    html += `<div class="roi-note">概算回収率は『発火時の万舟率 × 平均万舟配当』の楽観上限(<b>100%で収支トントン</b>／買い目1点・的中=平均配当と仮定)。3連単は買い目を増やすほど実際の回収率は下がります。正式値は買い目確定後に算出。</div>`;
+    html += '</div>';
+
+    // by_level テーブル
+    if (d.by_level && typeof d.by_level === 'object') {
+      const levels = Object.entries(d.by_level);
+      if (levels.length) {
+        html += '<div class="card"><h2>レベル別</h2><div style="overflow-x:auto"><table><thead><tr><th>レベル</th><th>発火</th><th>万舟</th><th>的中率</th></tr></thead><tbody>';
+        levels.forEach(([lvl, v]) => {
+          const rate = v.rate != null ? (v.rate * 100).toFixed(1) + '%' : '-';
+          html += `<tr>
+            <td>${levelBadge(lvl)}</td>
+            <td>${v.fired != null ? v.fired : '-'}</td>
+            <td>${v.manshu != null ? v.manshu : '-'}</td>
+            <td><b>${rate}</b></td>
+          </tr>`;
+        });
+        html += '</tbody></table></div></div>';
+      }
+    }
+
     wrap.innerHTML = html;
   } catch (e) {
-    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
-  }
-}
-function toggleRacerDetail(i) {
-  const row = document.getElementById('rd-' + i);
-  const body = document.getElementById('rd-body-' + i);
-  if (row.style.display === 'none') {
-    row.style.display = '';
-    const c = window._racerCands[i];
-    const hits = (c.instances||[]).filter(x => x.hit).length;
-    let h = `<div style="margin:8px 0"><b>${c.racer_name}が${c.cond_lane}号艇に乗ったレース ${(c.instances||[]).length}件中 ${hits}件的中</b></div>`;
-    h += '<table style="font-size:12px"><thead><tr><th>判定</th><th>日付</th><th>競艇場</th><th>R</th><th>着順(上位3)</th><th>3連単配当</th></tr></thead><tbody>';
-    for (const ins of (c.instances||[])) {
-      const fin = ins.finish.map(f => f[1]).join('-');
-      const mark = ins.hit ? '<span style="color:var(--good)">◎的中</span>' : '<span style="color:var(--bad)">✗外</span>';
-      const dt = `${ins.date.slice(0,4)}/${ins.date.slice(4,6)}/${ins.date.slice(6)}`;
-      const pay3t = ins.payout_3t_yen
-        ? `<span class="muted">${ins.payout_3t||''}</span> <b>¥${Number(ins.payout_3t_yen).toLocaleString()}</b>`
-        : '<span class="muted">-</span>';
-      h += `<tr><td>${mark}</td><td>${dt}</td><td><b>${ins.venue}</b></td><td>${ins.rno}R</td><td>${fin}</td><td>${pay3t}</td></tr>`;
-    }
-    h += '</tbody></table>';
-    body.innerHTML = h;
-  } else {
-    row.style.display = 'none';
+    wrap.innerHTML = `<div class="card"><p class="error">エラー: ${e.message}</p></div>`;
   }
 }
 
-// レース詳細
-// 複合予想エンジンの描画（多角的な異常値を合成した「予想の軸」）
+function kpiBox(val, label, sub) {
+  return `<div class="verify-kpi">
+    <div class="val">${val}</div>
+    <div class="lbl">${label}</div>
+    ${sub ? `<div class="sub">${sub}</div>` : ''}
+  </div>`;
+}
+
+// ---- レース詳細 ----
 function renderPredict(p) {
   if (!p) return '';
-  if (!p.ok) return `<h4 style="margin-top:24px">🎯 複合予想</h4><p class="muted">${p.error || '予想を生成できません'}</p>`;
+  if (!p.ok) return `<h4 style="margin-top:24px">複合予想</h4><p class="muted">${p.error || '予想を生成できません'}</p>`;
   const pct = v => (v * 100).toFixed(0);
   const m = (p.model && p.model.metrics) || {};
-  let h = `<h4 style="margin-top:24px">🎯 複合予想エンジン <span class="muted" style="font-size:11px;font-weight:400">多角的な異常値を合成した「予想の軸」</span></h4>`;
+  let h = `<h4 style="margin-top:24px">複合予想エンジン <span class="muted" style="font-size:11px;font-weight:400">多角的な異常値を合成した「予想の軸」</span></h4>`;
   h += '<table><thead><tr><th>印</th><th>艇</th><th>選手</th><th>級</th><th>top3確率</th><th>枠基準</th><th>異常値</th><th></th></tr></thead><tbody>';
   for (const b of p.boats) {
     const col = b.anomaly >= 0.05 ? 'var(--good)' : (b.anomaly <= -0.08 ? 'var(--bad)' : 'var(--text-dim)');
@@ -686,8 +795,8 @@ function renderPredict(p) {
   }
   h += '</tbody></table>';
   h += `<p style="margin:10px 0"><b>軸:</b> ${p.axis.map(l => `<span class="lane lane-${l}">${l}</span>`).join(' ')} <b style="margin-left:14px">相手:</b> ${p.partners.map(l => `<span class="lane lane-${l}">${l}</span>`).join(' ')}</p>`;
-  if (p.anomaly_pos) h += `<div style="background:rgba(63,185,80,.1);border-left:3px solid var(--good);padding:8px 12px;margin:8px 0;border-radius:4px">📈 ${p.anomaly_pos.text}</div>`;
-  if (p.anomaly_neg) h += `<div style="background:rgba(248,81,73,.1);border-left:3px solid var(--bad);padding:8px 12px;margin:8px 0;border-radius:4px">📉 ${p.anomaly_neg.text}</div>`;
+  if (p.anomaly_pos) h += `<div style="background:rgba(63,185,80,.1);border-left:3px solid var(--good);padding:8px 12px;margin:8px 0;border-radius:4px">${p.anomaly_pos.text}</div>`;
+  if (p.anomaly_neg) h += `<div style="background:rgba(248,81,73,.1);border-left:3px solid var(--bad);padding:8px 12px;margin:8px 0;border-radius:4px">${p.anomaly_neg.text}</div>`;
   if (p.tickets && p.tickets.length) {
     h += '<div style="margin-top:10px"><b>参考フォーメーション</b>';
     for (const t of p.tickets) {
@@ -696,7 +805,7 @@ function renderPredict(p) {
     h += '</div>';
   }
   if (p.occult_fires && p.occult_fires.length) {
-    h += `<div style="margin-top:10px"><b>🔮 オカルト/異常値サイン発火 (${p.occult_fires.length})</b>`;
+    h += `<div style="margin-top:10px"><b>オカルト/異常値サイン発火 (${p.occult_fires.length})</b>`;
     for (const o of p.occult_fires) {
       h += `<div class="muted" style="margin:4px 0">[${o.dim}] ${o.desc} → <b style="color:var(--pink)">${o.pair.join('-')}</b> が3着以内 <span style="font-size:11px">(実績 ${o.base} ・ ${(o.base_rate * 100).toFixed(0)}%)</span></div>`;
     }
@@ -709,8 +818,16 @@ function renderPredict(p) {
   return h;
 }
 
+function formatTarget(s) {
+  if (s.target_kind === 'top3_pair') {
+    const [a, b] = s.target_pair.split('-');
+    return `<span class="lane lane-${a}">${a}</span>+<span class="lane lane-${b}">${b}</span>`;
+  }
+  return `<span class="lane lane-${s.target_pair}">${s.target_pair}</span>`;
+}
+
 async function loadRace() {
-  const date = ymd_nohyphen(document.getElementById('r-date').value);
+  const date = stripHyphen(document.getElementById('r-date').value);
   const jcd = document.getElementById('r-jcd').value;
   const rno = document.getElementById('r-rno').value;
   const wrap = document.getElementById('race-detail');
@@ -721,7 +838,6 @@ async function loadRace() {
     if (d.race) {
       html += `<h3>${d.race.venue} ${d.race.rno}R - ${d.race.title}</h3>`;
     }
-    // 出走表
     if (d.entries && d.entries.length) {
       html += '<h4>出走表</h4><table><thead><tr><th>艇</th><th>選手</th><th>登番</th><th>級</th><th>年齢/体重</th><th>F/L/ST</th><th>全国(勝/2/3)</th><th>当地(勝/2/3)</th><th>モ</th><th>艇</th></tr></thead><tbody>';
       for (const e of d.entries) {
@@ -740,10 +856,8 @@ async function loadRace() {
       }
       html += '</tbody></table>';
     }
-    // 複合予想エンジン（多角的異常値の合成）
     if (d.predict) html += renderPredict(d.predict);
-    // 発火サイン
-    html += '<h4 style="margin-top:20px">🔥 発火サイン</h4>';
+    html += '<h4 style="margin-top:20px">発火サイン</h4>';
     if (!d.fires || !d.fires.length) {
       html += '<p class="muted">このレースで発火するサインはありません。</p>';
     } else {
@@ -759,7 +873,6 @@ async function loadRace() {
       }
       html += '</div>';
     }
-    // 結果
     if (d.result) {
       html += '<h4 style="margin-top:20px">結果</h4>';
       let fin = [];
@@ -780,12 +893,13 @@ async function loadRace() {
   }
 }
 
-// データ収集
+// ---- データ収集 ----
 let collectJobId = null;
+
 async function startCollect() {
   const body = {
-    start: ymd_nohyphen(document.getElementById('c-start').value),
-    end: ymd_nohyphen(document.getElementById('c-end').value),
+    start: stripHyphen(document.getElementById('c-start').value),
+    end: stripHyphen(document.getElementById('c-end').value),
     force: document.getElementById('c-force').checked,
   };
   document.getElementById('collect-status').textContent = '開始中...';
@@ -793,14 +907,14 @@ async function startCollect() {
   try {
     const resp = await fetch(API_BASE + '/api/collect', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body),
     });
     const r = await resp.json();
     if (resp.status === 409 && r.existing_job_id) {
       collectJobId = r.existing_job_id;
       document.getElementById('collect-status').innerHTML =
-        `<span style="color:var(--warn)">⚠ 既存のジョブ「${collectJobId}」が走行中。そのまま進捗を表示します。</span>`;
+        `<span style="color:var(--warn)">既存のジョブ「${collectJobId}」が走行中。そのまま進捗を表示します。</span>`;
       pollJob();
       return;
     }
@@ -812,7 +926,7 @@ async function startCollect() {
     document.getElementById('collect-status').innerHTML = `<span class="error">${e.message}</span>`;
   }
 }
-// ページ読込時に進行中のジョブがあれば自動的に拾う
+
 async function autoAttachCollect() {
   for (const jid of ['bootstrap']) {
     try {
@@ -820,19 +934,20 @@ async function autoAttachCollect() {
       if (j.status === 'running') {
         collectJobId = jid;
         document.getElementById('collect-status').innerHTML =
-          `<span style="color:var(--warn)">⚠ サーバー側で「${jid}」が走行中。表示中...</span>`;
+          `<span style="color:var(--warn)">サーバー側で「${jid}」が走行中。表示中...</span>`;
         pollJob();
         return;
       }
     } catch {}
   }
 }
+
 async function pollJob() {
   if (!collectJobId) return;
   try {
     const j = await api('/api/job/' + collectJobId);
     document.getElementById('collect-status').innerHTML = `状態: <b>${j.status}</b>`;
-    document.getElementById('collect-log').textContent = (j.log||[]).join('\n');
+    document.getElementById('collect-log').textContent = (j.log || []).join('\n');
     const logEl = document.getElementById('collect-log');
     logEl.scrollTop = logEl.scrollHeight;
     if (j.status === 'done') {
@@ -847,118 +962,9 @@ async function pollJob() {
   }
 }
 
-// マイニング
-async function runMine() {
-  const body = {
-    min_support: parseInt(document.getElementById('m-sup').value),
-    min_confidence: parseFloat(document.getElementById('m-conf').value),
-    min_lift: parseFloat(document.getElementById('m-lift').value),
-    max_p_value: parseFloat(document.getElementById('m-p').value),
-  };
-  const wrap = document.getElementById('mine-result');
-  wrap.innerHTML = '<p class="muted">処理中...</p>';
-  try {
-    const r = await api('/api/mine', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    let html = `<div class="kpi">
-      <div><b>${r.races}</b><span>対象レース</span></div>
-      <div><b>${r.signs_extracted}</b><span>抽出サイン</span></div>
-    </div>`;
-    if (r.top10 && r.top10.length) {
-      html += '<h4>Top 10 サイン</h4><div>';
-      for (const s of r.top10) {
-        html += `<div class="sign-row">
-          <span class="lane lane-${s.cond_lane}">${s.cond_lane}</span>
-          <span><b>${s.racer_name}</b> → ${formatTarget(s)}</span>
-          <span>${s.hits}/${s.support}</span>
-          <span class="conf">${(s.confidence*100).toFixed(1)}%</span>
-          <span class="lift">×${s.lift?.toFixed(2)}</span>
-        </div>`;
-      }
-      html += '</div>';
-    }
-    wrap.innerHTML = html;
-    refreshStats();
-  } catch (e) {
-    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
-  }
-}
-
-// バックテスト
-async function runBacktest() {
-  const body = {
-    train_from: ymd_nohyphen(document.getElementById('bt-train-from').value),
-    train_to: ymd_nohyphen(document.getElementById('bt-train-to').value),
-    test_from: ymd_nohyphen(document.getElementById('bt-test-from').value),
-    test_to: ymd_nohyphen(document.getElementById('bt-test-to').value),
-  };
-  const wrap = document.getElementById('bt-result');
-  wrap.innerHTML = '<p class="muted">処理中...</p>';
-  try {
-    const r = await api('/api/backtest', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    let html = `<div class="kpi">
-      <div><b>${r.train_races}</b><span>学習レース</span></div>
-      <div><b>${r.test_races}</b><span>テストレース</span></div>
-      <div><b>${r.signs_extracted}</b><span>抽出サイン</span></div>
-      <div><b>${r.overall_fires}</b><span>発火レース</span></div>
-      <div><b>${(r.overall_race_hit_rate*100).toFixed(1)}%</b><span>レース別的中率</span></div>
-    </div>`;
-    html += '<h4 style="margin-top:16px">種別ごと</h4>';
-    for (const [k, v] of Object.entries(r.per_kind || {})) {
-      html += `<div class="card" style="background:var(--bg3)">
-        <h4>${k === 'top3_pair' ? '3着以内ペア' : '1着'}</h4>
-        <div class="kpi">
-          <div><b>${v.fires}</b><span>発火</span></div>
-          <div><b>${v.hits}</b><span>的中</span></div>
-          <div><b>${(v.accuracy*100).toFixed(1)}%</b><span>的中率</span></div>
-          <div><b>${(v.roi*100).toFixed(1)}%</b><span>ROI</span></div>
-          <div><b>¥${v.stake.toLocaleString()}</b><span>投資</span></div>
-          <div><b>¥${v.payout.toLocaleString()}</b><span>払戻</span></div>
-        </div>
-      </div>`;
-    }
-    wrap.innerHTML = html;
-  } catch (e) {
-    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
-  }
-}
-
-// 整合性
-async function runIntegrity() {
-  const wrap = document.getElementById('integrity-result');
-  wrap.innerHTML = '<p class="muted">処理中...</p>';
-  try {
-    const r = await api('/api/integrity');
-    const s = r.summary;
-    let html = `<div class="kpi">
-      <div><b>${s.total_races}</b><span>全レース</span></div>
-      <div><b style="color:var(--good)">${s.ok}</b><span>正常</span></div>
-      <div><b style="color:${s.issues>0?'var(--bad)':'var(--good)'}">${s.issues}</b><span>異常</span></div>
-      <div><b>${s.missing_entries}</b><span>出走表欠損</span></div>
-      <div><b>${s.missing_finish}</b><span>結果欠損</span></div>
-      <div><b>${s.lane_mismatch}</b><span>艇番不一致</span></div>
-      <div><b>${s.missing_payout}</b><span>配当欠損</span></div>
-    </div>`;
-    const sections = [
-      ['missing_entries', '出走表欠損'],
-      ['missing_finish', '結果欠損'],
-      ['lane_mismatch', '艇番不一致'],
-      ['missing_payout', '配当欠損'],
-    ];
-    for (const [key, label] of sections) {
-      const items = r[key] || [];
-      if (items.length) {
-        html += `<h4>${label} (${items.length})</h4><pre class="log">${items.slice(0,50).map(i=>JSON.stringify(i)).join('\n')}</pre>`;
-      }
-    }
-    wrap.innerHTML = html;
-  } catch (e) {
-    wrap.innerHTML = `<p class="error">エラー: ${e.message}</p>`;
-  }
-}
-
-// 起動時
+// ---- 起動 ----
 refreshStats();
-loadDay();
+loadAlert();
 autoAttachCollect();
 </script>
 </body>

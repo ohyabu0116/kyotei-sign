@@ -37,8 +37,9 @@ import backtest
 import saver
 import watchlist_eval
 import composite
+import are_engine
 
-APP_VERSION = "3.0"
+APP_VERSION = "4.0"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -48,6 +49,23 @@ _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 _collect_lock = threading.Lock()    # 同時に1つのデータ収集ジョブだけ走らせる
 _active_collect_job: dict = {"id": None}
+
+# ── 荒れエンジン(オカルト)バンドルのキャッシュ ───────────────────
+# build_all は depth-2 集計で数秒かかるので、女子戦×結果ありのレース数を
+# キーにメモ化する。データ収集でレースが増えたら自動で作り直す。
+_are_cache: dict = {"count": -1, "bundle": None}
+_are_lock = threading.Lock()
+
+
+def _get_are_bundle(conn, min_support: int = 15):
+    n = conn.execute(
+        "SELECT COUNT(*) FROM races WHERE is_ladies=1 AND has_result=1"
+    ).fetchone()[0]
+    with _are_lock:
+        if _are_cache["bundle"] is None or _are_cache["count"] != n:
+            _are_cache["bundle"] = are_engine.build_all(conn, min_support_cond=min_support)
+            _are_cache["count"] = n
+        return _are_cache["bundle"]
 
 
 def _job_set(job_id: str, **fields) -> None:
@@ -129,6 +147,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._api_race(q)
             if path == "/api/results":
                 return self._api_results(q)
+            if path == "/api/are/conditions":
+                return self._api_are_conditions(q)
+            if path == "/api/are/today":
+                return self._api_are_today(q)
+            if path == "/api/are/verify":
+                return self._api_are_verify(q)
             if path == "/api/watchlist":
                 return self._api_watchlist()
             if path == "/api/signs":
@@ -272,6 +296,69 @@ class Handler(BaseHTTPRequestHandler):
             "predict": predict,
             "result": dict(result) if result else None,
         })
+
+    # ── 荒れエンジン(オカルト) ────────────────────────────────
+    def _api_are_conditions(self, q):
+        """荒れ条件・型: 万舟が出やすいオカルト条件、3つの型(荒れ常連/3号艇荒らし役/
+        荒れ水面)、共通項サマリを返す。"""
+        db.init_db()
+        with db.get_conn() as conn:
+            bundle = _get_are_bundle(conn)
+        # cond タプルは内部用なので除いて返す（desc があれば十分）
+        conds = [{k: v for k, v in c.items() if k != "cond"}
+                 for c in bundle.get("conditions", [])]
+        return _json_response(self, 200, {
+            "base": bundle.get("base", {}),
+            "conditions": conds,
+            "arashi_lane3": bundle.get("arashi_lane3", []),
+            "regulars": bundle.get("regulars", []),
+            "venues": bundle.get("venues", []),
+            "common": bundle.get("common", {}),
+        })
+
+    def _api_are_today(self, q):
+        """荒れアラート: 指定日(既定=今日)の女子戦を1レースずつ荒れ条件に照合し、
+        荒れ度(万舟警報/やや荒れ/堅め)と発火したオカルト条件を返す。
+        出走表がDBにあるレースのみ判定する。"""
+        date = (q.get("date") or [datetime.date.today().strftime("%Y%m%d")])[0]
+        db.init_db()
+        with db.get_conn() as conn:
+            bundle = _get_are_bundle(conn)
+            races = list(conn.execute(
+                "SELECT jcd, rno, venue, title, has_card, has_result FROM races "
+                "WHERE date=? AND is_ladies=1 ORDER BY jcd, rno", (date,)))
+            out = []
+            for r in races:
+                ents = list(conn.execute(
+                    "SELECT lane, toban, name, motor_no FROM race_entries "
+                    "WHERE date=? AND jcd=? AND rno=? ORDER BY lane",
+                    (date, r["jcd"], r["rno"])))
+                if not ents:
+                    continue
+                lanes = [{"lane": e["lane"], "toban": e["toban"],
+                          "name": e["name"], "motor": e["motor_no"]} for e in ents]
+                ev = are_engine.evaluate_card(lanes, r["venue"], r["rno"], date, bundle)
+                row = {"jcd": r["jcd"], "venue": r["venue"], "rno": r["rno"],
+                       "title": r["title"], "has_result": bool(r["has_result"])}
+                row.update(ev)
+                out.append(row)
+        out.sort(key=lambda x: -x.get("are_score", 0))
+        return _json_response(self, 200, {
+            "date": date, "races": out,
+            "note": "出走表がDBにある女子戦のみ判定。未収集の日は『データ収集』タブで取得してください。",
+        })
+
+    def _api_are_verify(self, q):
+        """結果照合・回収率: 期間内で荒れ条件が発火したレースが実際に万舟だったか集計。"""
+        frm = (q.get("from") or [""])[0]
+        to = (q.get("to") or [""])[0]
+        if not (frm and to):
+            return _json_response(self, 400, {"error": "from, to required"})
+        db.init_db()
+        with db.get_conn() as conn:
+            bundle = _get_are_bundle(conn)
+            res = are_engine.verify_period(conn, frm, to, bundle)
+        return _json_response(self, 200, res)
 
     def _api_results(self, q):
         """結果一覧: 指定日の女子戦の結果（着順・決まり手・配当）。日付なしなら直近 limit 件。"""
