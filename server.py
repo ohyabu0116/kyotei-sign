@@ -8,7 +8,7 @@ Endpoints:
   GET  /api/stats             DB統計
   GET  /api/today             今日の女子戦 + 発火サイン
   GET  /api/day?date=         指定日の女子戦
-  GET  /api/race?date=&jcd=&rno=   レース詳細（出走表+結果+発火サイン）
+  GET  /api/race?date=&jcd=&rno=   レース詳細（オカルト荒れ判定+出走メンバー+結果）
   GET  /api/signs             抽出済みサイン一覧
   GET  /api/watchlist         オカルト/異常値ウォッチリストの生存追跡
   GET  /api/integrity         データ整合性チェック
@@ -39,7 +39,7 @@ import watchlist_eval
 import composite
 import are_engine
 
-APP_VERSION = "4.0"
+APP_VERSION = "4.1"
 PORT = int(os.environ.get("PORT", 8772))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
@@ -265,9 +265,6 @@ class Handler(BaseHTTPRequestHandler):
                 "SELECT * FROM race_entries WHERE date=? AND jcd=? AND rno=? ORDER BY lane",
                 (date, jcd, rno),
             ))
-            # 発火サイン
-            card_entries = [(e["lane"], e["toban"]) for e in entries]
-            fires = miner.find_fires_for_card(conn, card_entries)
             # 結果（あれば）
             result = conn.execute(
                 "SELECT * FROM race_results WHERE date=? AND jcd=? AND rno=?",
@@ -277,23 +274,20 @@ class Handler(BaseHTTPRequestHandler):
                 "SELECT date, jcd, rno, venue, title, is_ladies, has_card, has_result FROM races WHERE date=? AND jcd=? AND rno=?",
                 (date, jcd, rno),
             ).fetchone()
-
-        # 複合予想エンジン（多角的な異常値を合成した予想の軸）
-        predict = None
-        if entries:
-            try:
-                meta = {"date": date, "rno": rno,
-                        "venue": race_row["venue"] if race_row else ""}
-                predict = composite.predict_race(entries, meta)
-            except Exception as e:
-                import traceback; traceback.print_exc()
-                predict = {"ok": False, "error": str(e)}
+            # 予想はオカルト荒れ条件のみで完結させる。
+            # 勝率/モーター2連率/枠の強さ等の一般情報・確率モデルは一切使わない。
+            are = None
+            if entries:
+                bundle = _get_are_bundle(conn)
+                lanes = [{"lane": e["lane"], "toban": e["toban"],
+                          "name": e["name"], "motor": e["motor_no"]} for e in entries]
+                venue = race_row["venue"] if race_row else ""
+                are = are_engine.evaluate_card(lanes, venue, rno, date, bundle)
 
         return _json_response(self, 200, {
             "race": dict(race_row) if race_row else None,
             "entries": [dict(e) for e in entries],
-            "fires": fires,
-            "predict": predict,
+            "are": are,
             "result": dict(result) if result else None,
         })
 
